@@ -1,0 +1,23 @@
+workspace -> index -> local repository -> remote repository
+로컬작업 공간 -> 스테이징 -> 로컬 저장소 -> 원격 저장소 순으로 
+
+초기 설정 명령어 
+git --version
+git config --global user.name "홍길동"
+git config --global user.email "hong@example.com"
+git config --global core.editor "code --wait"
+git config --list
+
+생성 및 클론
+git init
+git clone https://github.com/user/repo.git
+
+git 가이드 라인
+feat	새 기능	feat: add login button
+fix	버그 수정	fix: resolve null pointer exception
+docs	문서만 변경	docs: update README
+refactor	코드 리팩터링	refactor: extract validation logic
+chore	빌드/설정 변경	chore: update .gitignore
+test	테스트 추가	test: add unit tests for auth module
+
+표준 형식: <type>(<scope>): <subject>
