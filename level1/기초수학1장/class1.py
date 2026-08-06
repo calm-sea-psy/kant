@@ -104,6 +104,7 @@ print("""
 u1 = v1 / np.linalg.norm(v1, 2)
 
 print('\n--- 필수 2-2 ---')
+
 print('u1 (정규화된 벡터):', u1)
 print('u1의 L2 노름:', np.linalg.norm(u1, 2))
 print('L2 노름이 1인지 확인:', np.isclose(np.linalg.norm(u1, 2), 1.0))
