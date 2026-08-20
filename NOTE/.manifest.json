@@ -47,8 +47,13 @@
     },
     "260819.md": {
       "group": "07-딥러닝기초와PyTorch",
-      "hash": "3e04b9ea1904ea8eeed801610d675e1d6556f67dfd2b9079677c2048ab9060e7",
-      "processed_at": "2026-08-19T05:19:11+00:00"
+      "hash": "dfba8bda6ea91eb92fd9a89da3cf357894e4c52d9e048b3126d1a9be3788503d",
+      "processed_at": "2026-08-20T03:59:06+00:00"
+    },
+    "260820.md": {
+      "group": "07-딥러닝기초와PyTorch",
+      "hash": "1afd212b4b2a23c42e6b22a8df9840adb8e75e2a1cd715043e97e180ac77a6f0",
+      "processed_at": "2026-08-20T03:59:06+00:00"
     }
   }
 }
