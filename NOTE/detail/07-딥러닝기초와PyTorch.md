@@ -1,6 +1,6 @@
 # 딥러닝 기초와 PyTorch
 
-> 출처 TIL: 260819, 260820
+> 출처 TIL: 260819, 260820, 260821
 
 ## 1. 머신러닝과 딥러닝의 접근 차이
 
@@ -317,3 +317,121 @@ x.reshape(32, -1)              # 동일한 결과, -1은 "나머지를 자동 �
 **언제 뭘 쓰나**: shape을 자유롭게 재배열해야 하면 `reshape`(안전), 성능이 중요하고 연속성이 확실하면 `view`. 다차원을 벡터로 펼치기만 하면 `flatten` 또는 `nn.Flatten()`. `view`가 연속성 에러로 실패하면 `.contiguous().view(...)` 또는 그냥 `reshape(...)`으로 바꾸면 해결됩니다.
 
 세 함수 모두 shape 인자에 `-1`을 하나 넣으면 나머지 차원 크기를 원소 수로부터 자동 계산해줍니다. 전체 크기를 일일이 계산할 필요 없이 batch만 고정하고 나머지를 펼칠 때 자주 씁니다.
+
+## 14. ReLU (Rectified Linear Unit)
+
+ReLU는 딥러닝에서 가장 널리 쓰이는 비선형 활성화함수로, 입력이 0보다 크면 그대로 통과시키고 0 이하면 전부 0으로 만드는 단순한 함수입니다. 그래프로 보면 음수 구간은 완전히 평평한 0, 양수 구간은 기울기 1인 직선입니다.
+
+```python
+nn.ReLU()
+# 또는 함수형으로
+torch.relu(x)
+```
+
+**사용하는 이유**: 11절에서 다룬 대로 `nn.Linear`만 계속 쌓으면 아무리 층을 늘려도 결국 하나의 선형 변환과 수학적으로 동일해집니다. 층과 층 사이에 ReLU 같은 비선형 함수를 끼워 넣어야만 "선형 변환 → 비선형 변환"이 반복되면서 곡선 형태의 복잡한 함수를 표현할 수 있습니다. 9절에서 언급된 계단함수와 달리 미분 가능(x=0 지점만 예외)해서 gradient 기반 학습을 적용할 수 있고, 계산도 `max(0, x)` 하나뿐이라 지수 연산이 필요한 Sigmoid/Tanh보다 빠릅니다.
+
+**단점 — Dying ReLU**: 입력이 음수인 뉴런은 출력도 gradient도 항상 0이 됩니다. 학습 중 특정 뉴런의 가중치가 안 좋게 업데이트되어 계속 음수 입력만 받게 되면, 그 뉴런은 영영 gradient가 0이라 다시는 업데이트되지 않고 "죽어버리는" 현상이 발생할 수 있습니다. 이를 보완하기 위해 음수 구간에도 작은 기울기를 주는 변형들(Leaky ReLU, PReLU, ELU, GELU 등)이 나왔습니다.
+
+**사용 위치**: MLP에서는 보통 은닉층 사이(`nn.Linear` → `nn.ReLU()` → `nn.Linear`)에 넣고, 출력층에는 잘 쓰지 않습니다 — 회귀는 출력에 제약이 없어야 하고, 분류는 7절에서 다룬 것처럼 Sigmoid/Softmax가 loss 함수 안에 이미 내장되어 있기 때문입니다.
+
+## 15. Sigmoid — 활성화함수와 확률 변환
+
+Sigmoid는 임의의 실수를 0~1 사이 값으로 압축하는 함수로, 입력이 커질수록 결과가 1에 가까워지고 작아질수록 0에 가까워지며 입력이 0일 때 정확히 0.5가 됩니다. 출력이 0~1 사이라서 확률로 해석하기 좋아, 이진분류에서 "이 샘플이 클래스 1일 확률"로 자연스럽게 쓰입니다.
+
+ReLU와 마찬가지로 계단함수를 대체하는 활성화함수 중 하나지만, Sigmoid는 입력값이 크거나 작을 때(양 끝으로 갈수록) 기울기가 거의 0으로 눌리는 gradient vanishing 문제가 있어서, 요즘은 은닉층 활성화함수로는 잘 안 쓰고 주로 이진분류의 출력을 확률로 바꾸는 용도로만 씁니다.
+
+**BCEWithLogitsLoss와의 관계 — 왜 합쳐놓았나**: 7절에서 다룬 대로 `BCEWithLogitsLoss`는 Sigmoid를 내부적으로 합쳐놓은 버전입니다. Sigmoid와 BCE를 따로 계산하면 극단적인 logit 값에서 문제가 생기는데, 예를 들어 logit이 아주 큰 음수(-100)면 `sigmoid(-100)`이 부동소수점 오차로 정확히 0.0이 되어버리고 그다음 `log(0)`이 `-inf`가 되어 loss가 깨집니다. `BCEWithLogitsLoss`는 Sigmoid와 log를 수학적으로 미리 정리한 형태(log-sum-exp 트릭)로 한 번에 계산해서 이런 극단값에서도 오버플로/언더플로 없이 안정적인 값을 냅니다. 그래서 "Sigmoid 붙이고 → BCELoss" 조합 대신 `BCEWithLogitsLoss` 하나만 쓰는 것이 표준 관례입니다.
+
+```python
+model = nn.Sequential(
+    nn.Linear(4, 16),
+    nn.ReLU(),
+    nn.Linear(16, 1),   # Sigmoid 없이 raw logit 그대로 출력!
+)
+
+loss_fn = nn.BCEWithLogitsLoss()
+logits = model(x)                # shape: (batch, 1), sigmoid 안 거친 raw 점수
+loss = loss_fn(logits, targets)  # targets: 0.0/1.0 float, shape 동일
+```
+
+**주의할 점**: 모델 마지막 레이어에 `nn.Sigmoid()`를 직접 붙이면 안 됩니다 — loss 함수 안에 이미 포함되어 있어서, 붙이면 Sigmoid가 두 번 적용되는 셈이 됩니다. 확률 값 자체가 필요한 추론 시점에만 별도로 `torch.sigmoid(logits)`를 호출합니다.
+
+**추론(inference) 파이프라인**: 학습 시에는 loss 함수가 Sigmoid를 내부적으로 포함하므로 모델은 raw logit만 출력하지만, 추론 시에는 loss 계산이 필요 없고 사람이 보거나 판정에 쓸 확률/label이 필요하므로 명시적으로 Sigmoid를 적용합니다.
+
+```python
+model.eval()
+with torch.no_grad():
+    logits = model(x)                    # raw score, shape (batch, 1)
+    probs = torch.sigmoid(logits)        # 0~1 확률로 변환
+    labels = (probs > 0.5).long()        # threshold로 0/1 label 결정
+```
+
+threshold는 0.5가 기본이지만, 클래스 불균형이 심하거나(사기 탐지, 스팸 필터 등) recall/precision 트레이드오프가 중요하면 0.3, 0.7 같은 값으로 튜닝하는 경우가 많습니다. 참고로 `sigmoid(x) > 0.5`는 수학적으로 `x > 0`과 같기 때문에, threshold가 0.5로 고정이라면 Sigmoid 없이 `logits > 0`으로 바로 label만 뽑아도 결과는 같습니다. 다만 실제 확률값(신뢰도 점수, ROC-AUC 계산 등)이 필요하면 결국 Sigmoid를 거쳐야 합니다.
+
+## 16. Softmax, CrossEntropyLoss, argmax
+
+Softmax는 여러 개의 raw score(logit)를 받아서 총합이 1인 확률 분포로 바꿔주는 함수로, 다중분류(클래스가 3개 이상)에서 Sigmoid의 역할을 합니다. 각 클래스의 logit을 지수함수에 넣고 전체 합으로 나눠서 정규화하며, 결과는 모든 값이 0~1 사이이고 전체 합이 정확히 1이며, logit이 클수록 지수함수 특성상 확률도 비대칭적으로 더 커집니다(가장 큰 logit이 확률도 압도적으로 커지는 경향).
+
+```python
+logits = torch.tensor([2.0, 1.0, 0.1])   # 클래스 3개짜리 raw score
+probs = torch.softmax(logits, dim=-1)     # tensor([0.659, 0.242, 0.099]) — 합 1.0
+```
+
+**왜 `dim`을 지정해야 하나 — Sigmoid와의 차이**: Sigmoid는 각 원소가 자기 자신의 값에만 의존하는 완전한 원소별(element-wise) 연산이라 축(axis) 개념 자체가 없습니다. 반면 Softmax는 분모에 같은 그룹 원소들의 합(`Σ`)이 들어가기 때문에, 어떤 원소 하나의 결과를 구하려면 "같은 그룹에 속한 다른 원소들과 합해서 나눠야" 합니다. 그래서 "어느 축을 하나의 그룹으로 볼 것인가"를 `dim`으로 반드시 지정해야 합니다. `dim=-1`은 마지막 차원(클래스 차원)을 기준으로 정규화하라는 뜻이고, `(batch, num_classes)` shape에서 배치별로 각각 정규화되도록 항상 `dim=-1`을 씁니다. 실수로 `dim=0`을 넘기면 배치 방향으로 정규화되어버려서 클래스 확률로서 의미 없는 값이 나옵니다.
+
+**CrossEntropyLoss**: `nn.CrossEntropyLoss()`는 7절에서 다룬 대로 Softmax + Negative Log Likelihood(NLL)를 내부적으로 합쳐놓은 손실함수이며, `BCEWithLogitsLoss`와 정확히 같은 이유(수치 안정성)로 Softmax를 분리하지 않고 하나로 결합해서 계산합니다.
+
+```python
+loss_fn = nn.CrossEntropyLoss()
+
+logits = model(x)                    # shape: (batch, num_classes), raw score
+targets = torch.tensor([0, 2, 1])    # shape: (batch,), 정수 클래스 인덱스!
+
+loss = loss_fn(logits, targets)
+```
+
+`BCEWithLogitsLoss`와 가장 다른 점은 targets의 형태입니다.
+
+| | BCEWithLogitsLoss | CrossEntropyLoss |
+|---|---|---|
+| targets dtype | float (0.0/1.0) | long (정수) |
+| targets shape | logits와 동일 `(batch, 1)` | 클래스 차원 없이 `(batch,)` |
+| 의미 | 각 샘플의 정답 확률 | 각 샘플의 정답 클래스 인덱스 |
+
+targets를 원-핫 벡터로 넣는 실수를 자주 하는데, `CrossEntropyLoss`는 원-핫이 아니라 정수 인덱스(0, 1, 2, ...)를 그대로 받습니다. 여기서 shape/dtype 실수가 제일 많이 납니다. 마지막에 `nn.Softmax()`를 직접 붙이면 안 되는 것도 `BCEWithLogitsLoss`에서 Sigmoid를 따로 안 붙이는 것과 똑같은 이유입니다.
+
+**argmax**: 텐서에서 가장 큰 값의 인덱스를 반환하는 함수로, 값 자체가 아니라 "몇 번째 위치에 있었는가"를 돌려줍니다.
+
+```python
+probs = torch.tensor([0.1, 0.7, 0.2])
+torch.argmax(probs)          # tensor(1)  -- 0.7이 인덱스 1에 있으므로
+```
+
+**추론 파이프라인**: 이진분류와 같은 패턴으로, 학습에는 활성화함수를 loss 안에 숨기고 추론에서만 명시적으로 적용합니다.
+
+```python
+model.eval()
+with torch.no_grad():
+    logits = model(x)                          # (batch, num_classes)
+    probs = torch.softmax(logits, dim=-1)       # 확률 분포로 변환
+    preds = torch.argmax(probs, dim=-1)         # 확률이 가장 큰 클래스 인덱스 = 예측 label
+```
+
+Softmax는 순서를 보존하는 단조증가 함수라서, "어떤 클래스의 확률이 가장 큰가"는 Softmax를 적용하기 전 logit에서 봐도 결과가 같습니다. 즉 `torch.argmax(logits, dim=-1)`과 `torch.argmax(probs, dim=-1)`은 항상 동일한 결과를 냅니다. 그래서 label만 필요하면 Softmax 없이 logit에서 바로 argmax를 뽑아도 되고, 확률 수치(신뢰도, top-k 확률 등)가 필요할 때만 Softmax를 거치면 됩니다.
+
+**확률 수치가 실무에서 필요한 경우**: label(argmax)만으로는 부족한 상황이 오히려 더 많습니다.
+
+- **신뢰도(confidence)**: 이미지 분류 서비스에서 confidence가 0.55밖에 안 되면 "애매하니 사람이 재검토"로 처리하고 0.95 이상일 때만 자동 처리하는 threshold 기반 라우팅. 추천 시스템·CTR 예측처럼 애초에 label이 아니라 확률값 자체가 최종 산출물인 경우. 모델이 "90% 확신"이라고 한 예측이 실제로 90% 맞는지 점검하는 calibration 검증.
+- **top-k 확률**: 검색 자동완성, 이미지 태깅, OCR 오탈자 후보처럼 1등만이 아니라 1~5등 후보와 각각의 점수를 함께 보여주는 UX. 텍스트 생성에서 다음 토큰을 top-k 확률 분포에서 샘플링하거나 여러 경로를 동시에 탐색하는 beam search.
+- 반대로 이미 정해진 자동화 파이프라인에서 "맞다/틀리다"만 판정하면 끝나는 단순 분류라면 label(argmax)만으로 충분합니다.
+
+## 17. Sigmoid와 Softmax 비교
+
+| | Sigmoid | Softmax |
+|---|---|---|
+| 계산 단위 | 원소 하나 (독립적) | 지정한 축(axis) 전체 (서로 의존) |
+| 필요한 정보 | 자기 자신 값만 | "같은 그룹"이 뭔지 (= `dim`) |
+| 출력 특성 | 각 값이 개별적으로 0~1 | 지정한 축 기준 합이 1 |
+| 용도 | 이진분류(클래스 1개당 독립 확률) | 다중분류(클래스들 간 상대적 확률 분포) |
+
+이진분류에서 Sigmoid는 "이 클래스일 확률"과 "아닐 확률(1-p)"을 계산 없이 암묵적으로 처리하는 반면(출력 뉴런 1개면 충분), 다중분류의 Softmax는 "클래스 A일 확률"이 "클래스 B, C일 확률"과 서로 상대적으로 결정되는 구조라서, 어떤 원소들이 서로 "경쟁"하는 그룹인지를 `dim`으로 명시해줘야 하는 것입니다.

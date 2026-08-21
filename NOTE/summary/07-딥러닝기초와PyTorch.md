@@ -1,6 +1,6 @@
 # 딥러닝 기초와 PyTorch — 요약
 
-> 출처 TIL: 260819, 260820
+> 출처 TIL: 260819, 260820, 260821
 
 - **ML vs DL**: 머신러닝은 사람이 특징을 설계, 딥러닝은 모델이 데이터에서 특징 표현을 스스로 학습
 - **딥러닝 파이프라인 순서**: import → config → data/dataloader → model → loss → optimizer → train loop → validation loop → logging → checkpoint
@@ -33,3 +33,16 @@
 - **reshape**: 가능하면 공유, 안 되면 자동 복사 — 항상 성공하는 안전한 선택
 - **flatten vs view/reshape**: flatten은 차원을 합치기만 가능(임의 재배열 불가), view/reshape은 임의 shape 변경 가능
 - **-1의 의미**: view/reshape/flatten 모두 `-1`을 넣으면 나머지 차원 크기를 자동 계산
+- **ReLU**: `max(0, x)`. 음수는 0, 양수는 그대로. 비선형성 부여, 계산 단순, gradient vanishing 완화
+- **Dying ReLU**: 음수 입력만 계속 받는 뉴런은 gradient가 항상 0이라 영영 업데이트 안 됨 → Leaky ReLU 등으로 보완
+- **Sigmoid**: 실수를 0~1로 압축(`1/(1+e^-x)`). 이진분류 확률 출력용. 큰/작은 입력에서 gradient vanishing 있어 은닉층엔 잘 안 씀
+- **BCEWithLogitsLoss 수치 안정성**: Sigmoid+log를 따로 계산하면 극단 logit에서 `log(0)=-inf` 위험 → log-sum-exp 트릭으로 결합 계산해 안정적
+- **Sigmoid 추론 패턴**: 학습 시 loss 안에 숨김(모델은 raw logit 출력) → 추론 시에만 `torch.sigmoid(logits)`로 명시적 확률 변환
+- **logits>0 vs sigmoid>0.5**: threshold 0.5 고정이면 수학적으로 동일 — label만 필요하면 Sigmoid 생략 가능
+- **Softmax**: logit들을 지수함수로 정규화해 합이 1인 확률 분포로 변환. 다중분류에서 Sigmoid 역할
+- **Softmax와 dim**: Sigmoid는 원소별 독립 연산이라 dim 불필요, Softmax는 그룹(축) 전체 합으로 정규화하므로 `dim` 필수(보통 `dim=-1`)
+- **CrossEntropyLoss targets**: BCEWithLogitsLoss는 float(0/1) targets, CrossEntropyLoss는 정수 클래스 인덱스(long) targets — 원-핫 아님
+- **argmax**: 텐서에서 가장 큰 값의 인덱스를 반환
+- **argmax vs softmax 순서**: Softmax는 단조증가 함수라 `argmax(logits)`와 `argmax(softmax(logits))` 결과가 항상 동일
+- **확률 수치가 필요한 실무 상황**: 신뢰도 기반 threshold 라우팅, 추천/CTR 등 확률 자체가 산출물, calibration 검증, top-k 후보 제시, beam search
+- **Sigmoid vs Softmax**: Sigmoid는 원소 단위 독립 계산(이진분류), Softmax는 축 전체 상대적 정규화(다중분류, dim 필요)
