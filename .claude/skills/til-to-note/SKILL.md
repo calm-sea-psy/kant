@@ -1,6 +1,6 @@
 ---
 name: til-to-note
-description: Incrementally turns this repo's TIL/*.md daily notes into topic-grouped study material under NOTE/summary (keyword-level quick reference) and NOTE/detail (fully-written prose explanations, no math formulas/LaTeX). Use this whenever the user asks to update, sync, regenerate, or build the NOTE folder from TIL, says things like "TIL 정리해줘", "노트 업데이트해줘", "교안 만들어줘/갱신해줘", "오늘 TIL을 노트에 반영해줘", or runs this skill with no arguments expecting a full incremental scan. Always check NOTE/.manifest.json and existing NOTE/summary, NOTE/detail files first — never regenerate everything from scratch; this skill's entire point is incremental, non-destructive updates.
+description: Incrementally turns this repo's TIL/*.md daily notes into topic-grouped study material under NOTE/summary.md (single-file keyword-level quick reference, read daily end-to-end) and NOTE/detail (topic-split, fully-written prose explanations, no math formulas/LaTeX). Use this whenever the user asks to update, sync, regenerate, or build the NOTE folder from TIL, says things like "TIL 정리해줘", "노트 업데이트해줘", "교안 만들어줘/갱신해줘", "오늘 TIL을 노트에 반영해줘", or runs this skill with no arguments expecting a full incremental scan. Always check NOTE/.manifest.json and existing NOTE/summary.md, NOTE/detail files first — never regenerate everything from scratch; this skill's entire point is incremental, non-destructive updates.
 ---
 
 # TIL → NOTE 교안 증분 생성
@@ -9,7 +9,7 @@ description: Incrementally turns this repo's TIL/*.md daily notes into topic-gro
 
 TIL/*.md(하루치 학습 키워드 정리)를 주제별로 묶어 두 종류의 교안으로 재구성합니다.
 
-- `NOTE/summary/summary.md` — 모든 주제를 하나의 파일에 담은 키워드 + 한두 줄 설명. 매일 훑어보며 리마인드하는 용도라 파일을 하나로 유지합니다(오래된 내용도 계속 눈에 스치게). 내부는 `## NN. 그룹이름` 섹션으로 나뉘며, 이 번호·이름이 `NOTE/detail`의 파일과 1:1로 대응합니다. 코드 없음.
+- `NOTE/summary.md` — 모든 주제를 하나의 파일에 담은 키워드 + 한두 줄 설명. 매일 훑어보며 리마인드하는 용도라 파일을 하나로 유지합니다(오래된 내용도 계속 눈에 스치게). 내부는 `## NN. 그룹이름` 섹션으로 나뉘며, 이 번호·이름이 `NOTE/detail`의 파일과 1:1로 대응합니다. 코드 없음.
 - `NOTE/detail/NN-슬러그.md` — 그룹별로 분리된 파일. 개념·배경·예시를 충실히 풀어쓴 설명. 수식/LaTeX 없이 전부 말로 풀어씀. 이해에 도움되는 Python 코드 스니펫은 유지 가능. summary에서 더 깊이 알고 싶을 때 찾아보는 용도라 주제별로 찾기 쉽게 파일을 나눠 유지합니다.
 
 **절대 전체를 다시 쓰지 않습니다.** TIL은 매일 추가되는 데이터이므로, 이 스킬은 "지금까지 반영 안 된 부분만 찾아서 기존 문서에 이어 붙이거나, 바뀐 부분만 고치는" 증분 작업입니다. 이미 처리된 TIL 내용을 다시 훑어 전체 파일을 재작성하면, 사용자가 반영 이후 직접 다듬었을 수도 있는 부분을 조용히 덮어써버릴 위험이 있습니다 — 그래서 "무엇이 이미 반영됐는가"를 정확히 추적하는 것이 이 스킬의 핵심입니다.
@@ -22,7 +22,7 @@ TIL 파일이 "새로 추가됐는지" 또는 "내용이 바뀌었는지"를 매
 
 ### 0. (최초 1회만) 매니페스트 초기화
 
-`NOTE/.manifest.json`이 없는 저장소에서 처음 이 스킬을 쓰는데 `NOTE/summary`, `NOTE/detail`에 이미 사람이 손으로 정리해둔 내용이 있다면, 그 내용이 어느 TIL 파일에서 왔는지를 사용자에게 확인하거나 대화 기록에서 추정해 매핑 JSON을 만들고 아래처럼 초기화합니다. 이미 매니페스트가 있다면 이 단계는 건너뜁니다.
+`NOTE/.manifest.json`이 없는 저장소에서 처음 이 스킬을 쓰는데 `NOTE/summary.md`, `NOTE/detail`에 이미 사람이 손으로 정리해둔 내용이 있다면, 그 내용이 어느 TIL 파일에서 왔는지를 사용자에게 확인하거나 대화 기록에서 추정해 매핑 JSON을 만들고 아래처럼 초기화합니다. 이미 매니페스트가 있다면 이 단계는 건너뜁니다.
 
 ```bash
 python .claude/skills/til-to-note/scripts/til_manifest.py init --map /path/to/mapping.json
@@ -44,7 +44,7 @@ python .claude/skills/til-to-note/scripts/til_manifest.py scan
 
 ### 2. 기존 NOTE 산출물을 먼저 읽는다
 
-`new`/`changed`로 처리해야 할 TIL 파일이 하나라도 있다면, 그 내용을 어디에 어떻게 반영할지 판단하기 전에 **반드시 먼저** `NOTE/summary/summary.md`의 `##` 섹션 목록과 `NOTE/detail/*.md` 각 파일의 헤딩 목록을 훑어봅니다(전체를 다 읽지 않더라도 최소한 헤딩 목록은 확인). 이렇게 해야:
+`new`/`changed`로 처리해야 할 TIL 파일이 하나라도 있다면, 그 내용을 어디에 어떻게 반영할지 판단하기 전에 **반드시 먼저** `NOTE/summary.md`의 `##` 섹션 목록과 `NOTE/detail/*.md` 각 파일의 헤딩 목록을 훑어봅니다(전체를 다 읽지 않더라도 최소한 헤딩 목록은 확인). 이렇게 해야:
 
 - 새 TIL 내용이 어느 기존 그룹에 속하는지 판단할 수 있고
 - 이미 있는 절과 중복되는 내용을 다시 쓰지 않을 수 있고
@@ -54,11 +54,11 @@ python .claude/skills/til-to-note/scripts/til_manifest.py scan
 
 각 TIL 파일을 전체 읽고, 다룬 주제들을 봅니다.
 
-**기존 그룹에 속하는 경우** (대부분 이 경우입니다): 해당 그룹의 `NOTE/detail/NN-슬러그.md`를 열어 TIL의 각 절을 새로운 `##` 섹션으로 파일 끝(또는 내용상 자연스러운 위치)에 이어 붙이고, `NOTE/summary/summary.md` 안에서 같은 그룹에 대응하는 `## NN. 그룹이름` 섹션을 찾아 그 섹션의 불릿 목록 끝에 요약 불릿을 이어 붙입니다. 두 파일 모두 해당 그룹/섹션의 `> 출처 TIL: ...` 줄에 새 날짜를 추가합니다. 기존 섹션·불릿은 건드리지 않습니다.
+**기존 그룹에 속하는 경우** (대부분 이 경우입니다): 해당 그룹의 `NOTE/detail/NN-슬러그.md`를 열어 TIL의 각 절을 새로운 `##` 섹션으로 파일 끝(또는 내용상 자연스러운 위치)에 이어 붙이고, `NOTE/summary.md` 안에서 같은 그룹에 대응하는 `## NN. 그룹이름` 섹션을 찾아 그 섹션의 불릿 목록 끝에 요약 불릿을 이어 붙입니다. 두 파일 모두 해당 그룹/섹션의 `> 출처 TIL: ...` 줄에 새 날짜를 추가합니다. 기존 섹션·불릿은 건드리지 않습니다.
 
 **TIL 파일이 바뀐 경우(`changed`)**: 무엇이 바뀌었는지 TIL 파일 자체의 이전 버전과 비교할 방법은 없으므로(매니페스트는 해시만 저장), 현재 TIL 내용 전체를 기준으로 detail 파일 안에서 제목이 같거나 매우 유사한 `##` 섹션과 summary.md 안의 대응 불릿을 찾아 그 부분만 고칩니다. 대응하는 곳을 못 찾으면 새로 추가합니다. 절대 detail 파일이나 summary.md 전체를 지우고 새로 쓰지 않습니다.
 
-**어느 기존 그룹에도 안 맞는 경우**: 새 그룹을 만들어야 합니다. 대화형으로 쓰이고 있다면(사용자가 직접 대화 중) 새 그룹을 만들지, 만든다면 이름을 뭐라 할지 사용자에게 짧게 물어봅니다. 자동/배치 실행 컨텍스트라 물어볼 수 없다면, 기존 번호 중 가장 큰 것 다음 번호로 새 슬러그를 만들고 나중에 사용자가 보고 조정할 수 있게 어떤 그룹을 왜 새로 만들었는지 결과 보고에 분명히 남깁니다. 새 그룹을 만들 때는 `NOTE/detail/NN-슬러그.md` 파일을 새로 만들고, `NOTE/summary/summary.md` 끝에 같은 번호·이름의 `## NN. 그룹이름` 섹션을 추가합니다.
+**어느 기존 그룹에도 안 맞는 경우**: 새 그룹을 만들어야 합니다. 대화형으로 쓰이고 있다면(사용자가 직접 대화 중) 새 그룹을 만들지, 만든다면 이름을 뭐라 할지 사용자에게 짧게 물어봅니다. 자동/배치 실행 컨텍스트라 물어볼 수 없다면, 기존 번호 중 가장 큰 것 다음 번호로 새 슬러그를 만들고 나중에 사용자가 보고 조정할 수 있게 어떤 그룹을 왜 새로 만들었는지 결과 보고에 분명히 남깁니다. 새 그룹을 만들 때는 `NOTE/detail/NN-슬러그.md` 파일을 새로 만들고, `NOTE/summary.md` 끝에 같은 번호·이름의 `## NN. 그룹이름` 섹션을 추가합니다.
 
 **여러 그룹에 걸치는 경우**: 하나의 TIL 파일이 서로 다른 주제를 다룬 여러 섹션으로 구성된 경우(실제로 흔합니다 — 예: 이 저장소의 260810.md는 Attention shape 문제와 미분·역전파 문제가 섞여 있었습니다), 절 단위로 쪼개서 각각 맞는 그룹에 분산 반영해도 되고, 이미 하나의 그룹으로 함께 다뤄지고 있었다면(예: "Transformer 수학" 그룹이 Attention과 미분을 함께 다룸) 그 선례를 따라 하나의 그룹에 함께 넣어도 됩니다. 기존 NOTE 문서의 그룹 경계를 존중하는 쪽을 우선하세요.
 
@@ -91,6 +91,6 @@ python .claude/skills/til-to-note/scripts/til_manifest.py update 260815.md 06-�
 1. `scan` 실행 → `new: ["260816.md"]`
 2. 기존 NOTE 그룹 7개(선형대수, 트랜스포머수학, 지도비지도학습, 앙상블학습, 편향분산과규제, 평가지표와데이터누수, 딥러닝기초와PyTorch) — `summary.md`의 `##` 섹션과 `detail/*.md` 헤딩 확인 → 정규표현식·SQL 모두 기존 7개 그룹 어디에도 안 맞음
 3. 대화형 세션이면 사용자에게 "정규표현식/SQL 관련 새 그룹을 만들까요, 아니면 반영을 보류할까요?"라고 질문
-4. 사용자가 승인하면 `NOTE/detail/08-데이터베이스와텍스트처리.md`를 새로 만들어 두 절을 반영하고, `NOTE/summary/summary.md` 끝에 `## 08. 데이터베이스와 텍스트 처리` 섹션을 추가해 대응 불릿을 반영
+4. 사용자가 승인하면 `NOTE/detail/08-데이터베이스와텍스트처리.md`를 새로 만들어 두 절을 반영하고, `NOTE/summary.md` 끝에 `## 08. 데이터베이스와 텍스트 처리` 섹션을 추가해 대응 불릿을 반영
 5. `til_manifest.py update 260816.md 08-데이터베이스와텍스트처리` 실행
 6. "260816.md를 새 그룹 08-데이터베이스와텍스트처리로 반영했습니다"라고 보고
