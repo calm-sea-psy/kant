@@ -1,6 +1,6 @@
 # 딥러닝 기초와 PyTorch — 요약
 
-> 출처 TIL: 260819, 260820, 260821
+> 출처 TIL: 260819, 260820, 260821, 260824
 
 - **ML vs DL**: 머신러닝은 사람이 특징을 설계, 딥러닝은 모델이 데이터에서 특징 표현을 스스로 학습
 - **딥러닝 파이프라인 순서**: import → config → data/dataloader → model → loss → optimizer → train loop → validation loop → logging → checkpoint
@@ -47,3 +47,12 @@
 - **argmax vs softmax 순서**: Softmax는 단조증가 함수라 `argmax(logits)`와 `argmax(softmax(logits))` 결과가 항상 동일
 - **확률 수치가 필요한 실무 상황**: 신뢰도 기반 threshold 라우팅, 추천/CTR 등 확률 자체가 산출물, calibration 검증, top-k 후보 제시, beam search
 - **Sigmoid vs Softmax**: Sigmoid는 원소 단위 독립 계산(이진분류), Softmax는 축 전체 상대적 정규화(다중분류, dim 필요)
+- **손실 함수의 4가지 역할**: 오차 정량화 / 최적화 방향 제시 / 역전파(backward) 시작점 / 문제 유형별 "좋은 모델"의 정의
+- **목표 함수(objective function)**: 최적화 대상 함수 전반을 가리키는 상위 개념(⊃ 손실 함수). 지도학습에서는 목표 함수=손실 함수(최소화), RL에서는 보상 최대화가 목표 함수인 경우가 많음. 규제 항이 붙으면 목표 함수=손실+λ·규제항
+- **MAE (`nn.L1Loss`)**: 오차 절댓값 평균. 이상치에 덜 민감하나 0 근처에서 미분 불연속
+- **Huber Loss (`nn.SmoothL1Loss`)**: 오차 작으면 MSE처럼, 크면 MAE처럼 — 이상치 강건 + 미분 가능 절충
+- **손실 함수 선택 체크리스트**: ①예측 타입(회귀/이진/다중/멀티라벨) ②(회귀) 이상치 민감도 ③(분류) 클래스 불균형→`pos_weight`/`weight`/Focal Loss ④활성화함수 중복 방지(모델 vs loss 중 한쪽만) ⑤레이블 dtype/shape 일치(CrossEntropyLoss는 원-핫 아닌 정수 인덱스)
+- **Learning Rate**: gradient 방향으로 이동하는 보폭. 너무 크면 발산/진동, 너무 작으면 느림·지역최솟값에 갇힘. 보통 0.1~0.0001에서 시작, 스케줄러로 점감
+- **SGD**: 미니배치 단위 gradient로 업데이트. 기본형은 단순 gradient×lr 이동
+- **Momentum**: 이전 이동 방향을 일정 비율(보통 0.9) 유지하며 누적 → 진동 감소, 일관된 방향 가속, 지역최솟값 탈출 도움. `SGD(momentum=0.9)`
+- **Adam**: 파라미터별 1차 모멘트(방향, Momentum과 동일 개념)·2차 모멘트(변동 크기)를 추적해 learning rate를 자동 적응. 튜닝 부담 적고 수렴 빠름, `Adam(lr=0.001, betas=(0.9,0.999))`. 일반화 성능은 SGD+Momentum이 더 나을 수 있음
