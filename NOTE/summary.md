@@ -154,7 +154,7 @@
 
 ## 07. 딥러닝 기초와 PyTorch
 
-> 출처 TIL: 260819, 260820, 260821, 260824
+> 출처 TIL: 260819, 260820, 260821, 260824, 260825
 
 - **ML vs DL**: 머신러닝은 사람이 특징을 설계, 딥러닝은 모델이 데이터에서 특징 표현을 스스로 학습
 - **딥러닝 파이프라인 순서**: import → config → data/dataloader → model → loss → optimizer → train loop → validation loop → logging → checkpoint
@@ -212,3 +212,18 @@
 - **SGD**: 미니배치 단위 gradient로 업데이트. 기본형은 단순 gradient×lr 이동
 - **Momentum**: 이전 이동 방향을 일정 비율(보통 0.9) 유지하며 누적 → 진동 감소, 일관된 방향 가속, 지역최솟값 탈출 도움. `SGD(momentum=0.9)`
 - **Adam**: 파라미터별 1차 모멘트(방향, Momentum과 동일 개념)·2차 모멘트(변동 크기)를 추적해 learning rate를 자동 적응. 튜닝 부담 적고 수렴 빠름, `Adam(lr=0.001, betas=(0.9,0.999))`. 일반화 성능은 SGD+Momentum이 더 나을 수 있음
+- **backward()=역전파**: loss부터 그래프를 거슬러 올라가며 각 텐서의 gradient를 계산하는 알고리즘. 결과는 `.grad`에 누적 저장
+- **계산 그래프**: 텐서 연산의 흐름을 노드·엣지로 표현한 DAG. Define-by-Run 방식이라 순전파 시점에 매번 새로 생성됨
+- **grad_fn**: 텐서가 "어떤 연산으로 만들어졌는지" 기억하는 포인터. `backward()`가 이걸 따라 거꾸로 이동
+- **Chain Rule과 역전파**: 신경망은 층을 쌓은 합성함수라 연쇄법칙으로 각 층의 로컬 미분만 계산해 곱하면 전체 미분을 구할 수 있음
+- **분기-합류 gradient**: 한 변수가 여러 경로로 출력에 영향을 주면, 각 경로에서 온 gradient를 모두 더함(다변수 연쇄법칙)
+- **requires_grad**: 텐서의 gradient 추적 여부 스위치. True인 텐서가 연산에 섞이면 결과도 자동으로 True(전염성)
+- **Leaf/Non-leaf tensor**: leaf=사용자가 직접 만든 텐서(w,b 등), non-leaf=연산 결과 텐서. `.grad`는 기본적으로 leaf에만 저장(non-leaf는 `retain_grad()` 필요)
+- **no_grad/detach/clone**: no_grad=블록 전체를 그래프 밖으로, detach=그래프만 끊고 메모리 공유, clone=메모리만 복사하고 그래프 유지, detach().clone()=완전 독립 사본
+- **gradient가 None일 때 체크리스트**: forward 경로 포함 여부 → requires_grad → detach/no_grad 개입 여부 → leaf 여부
+- **zero_grad/backward/step**: grad 초기화 → grad 계산(값은 아직 안 바뀜) → grad로 파라미터 실제 갱신. 순서 고정
+- **loss.item()**: 스칼라 텐서를 순수 float로 추출. 그래프 연결이 끊겨 메모리 누수 방지(리스트에 텐서째로 쌓으면 그래프가 계속 쌓임)
+- **train/eval/no_grad 구분**: train↔eval은 Dropout·BatchNorm 등 레이어 동작 모드 제어, no_grad는 그래프 생성 여부 제어 — 평가 코드엔 둘 다 필요
+- **Dataset vs DataLoader**: Dataset=`__len__`+`__getitem__`으로 샘플 1개 접근법 정의(데이터 창고), DataLoader=배치화·셔플·병렬 로딩 담당(배달원)
+- **TensorDataset vs Custom Dataset**: 이미 텐서로 준비된 데이터는 TensorDataset으로 충분, 파일 읽기·전처리·augmentation이 필요하면 Dataset을 상속해 직접 구현
+- **Dataset 디버깅 순서**: `dataset[0]` 타입/shape 확인 → `len()` 확인 → 여러 인덱스 shape 일관성 확인 → `next(iter(loader))` 배치 확인 → 모델 입력 shape 확인 → y dtype이 loss 함수와 맞는지 확인
