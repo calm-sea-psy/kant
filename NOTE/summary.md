@@ -154,7 +154,7 @@
 
 ## 07. 딥러닝 기초와 PyTorch
 
-> 출처 TIL: 260819, 260820, 260821, 260824, 260825
+> 출처 TIL: 260819, 260820, 260821, 260824, 260825, 260826
 
 - **ML vs DL**: 머신러닝은 사람이 특징을 설계, 딥러닝은 모델이 데이터에서 특징 표현을 스스로 학습
 - **딥러닝 파이프라인 순서**: import → config → data/dataloader → model → loss → optimizer → train loop → validation loop → logging → checkpoint
@@ -227,3 +227,12 @@
 - **Dataset vs DataLoader**: Dataset=`__len__`+`__getitem__`으로 샘플 1개 접근법 정의(데이터 창고), DataLoader=배치화·셔플·병렬 로딩 담당(배달원)
 - **TensorDataset vs Custom Dataset**: 이미 텐서로 준비된 데이터는 TensorDataset으로 충분, 파일 읽기·전처리·augmentation이 필요하면 Dataset을 상속해 직접 구현
 - **Dataset 디버깅 순서**: `dataset[0]` 타입/shape 확인 → `len()` 확인 → 여러 인덱스 shape 일관성 확인 → `next(iter(loader))` 배치 확인 → 모델 입력 shape 확인 → y dtype이 loss 함수와 맞는지 확인
+- **TorchVision transform**: 이미지를 모델 입력에 맞게 전처리하는 함수 묶음(PIL→Tensor, Resize, Normalize, augmentation). `__getitem__` 호출 시점에 지연 적용됨. `Compose`로 순서대로 묶어 사용
+- **ToTensor**: `uint8`[0,255] → `float32`[0,1] 스케일링 + `(H,W,C)` → `(C,H,W)` 축 순서 변환(Conv2d가 채널 우선 순서를 기대하기 때문)
+- **Normalize(mean, std)**: 채널별로 `(x-mean)/std` 적용해 평균 0 근처로 이동. mean/std는 데이터셋 전체·채널별 픽셀 통계값. ImageNet 사전학습 모델은 ImageNet 통계값을 그대로 써야 함
+- **Data Augmentation**: 원본 이미지에 무작위 변형(flip, crop, color jitter 등)을 가해 매 epoch 다르게 보여주는 기법. 과적합 방지용 정규화 기법. train에만 적용, val/test는 결정적 전처리만
+- **Batch Size**: 한 학습 스텝에서 한꺼번에 처리하는 샘플 수. 작으면 메모리 적고 노이즈 많음(느림), 크면 메모리 많이 쓰고 안정적(빠름)
+- **Shuffle**: 매 epoch마다 데이터 순서를 무작위로 섞음. train은 순서 편향 방지를 위해 항상 True, val/test는 보통 False
+- **Train/Valid/Test Split**: train=파라미터 갱신, val=갱신 없이 튜닝·조기종료 판단, test=최종 성능을 딱 한 번 확인. 3분할해야 튜닝 과정에서 test가 오염되지 않음
+- **random_split**: `Dataset`을 인덱스 기반으로 무작위 분할해 `Subset`을 반환(메모리 복사 없음). 클래스 비율 미보장, transform 공유 문제 있음 — stratify나 별도 transform Dataset+동일 인덱스로 우회
+- **데이터 파이프라인 디버깅 매핑**: NaN loss→Normalize/lr/라벨 이상, val acc 정체→라벨 매칭·데이터 누수·val augmentation 오류, 특정 클래스만 오답→클래스 불균형, shape 에러→Resize 누락·채널 혼재, 재현 안 됨→split 시드 미고정, 배포 후 성능 저하→전처리 불일치

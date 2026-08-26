@@ -683,3 +683,150 @@ class ImageDataset(Dataset):
 먼저 `DataLoader`를 붙이기 전에 `dataset[0]`을 직접 호출해서 반환값의 타입, shape, dtype이 예상과 맞는지 확인합니다. 다음으로 `len(dataset)`이 실제 데이터 개수와 일치하는지 확인합니다. 그다음 처음·중간·끝 등 여러 인덱스를 확인해 shape이 항상 동일한지 봅니다(샘플마다 shape이 다르면 나중에 배치로 묶는 과정에서 에러가 납니다). 그 후 `next(iter(loader))`로 배치 하나를 뽑아, `batch_size`에 해당하는 차원이 맨 앞에 잘 붙어 있는지 확인합니다. 이어서 실제로 모델에 넣어보고 shape mismatch가 없는지 확인합니다. 마지막으로 정답(y)의 dtype이 사용하는 loss 함수가 기대하는 dtype과 맞는지 확인합니다(예: `CrossEntropyLoss`는 정수 인덱스인 long 타입을 기대합니다).
 
 이 순서를 따르면 문제가 `Dataset`(개별 샘플 반환 단계)에 있는지 `DataLoader`(배치로 묶는 단계)에 있는지, 혹은 모델 입력과의 shape 불일치인지를 단계별로 가려낼 수 있습니다.
+
+## 36. TorchVision transform: 개념과 실행 시점
+
+이미지 파일을 그냥 읽으면 PIL Image 객체일 뿐, 모델이 바로 쓸 수 있는 텐서가 아닙니다. 크기도 이미지마다 제각각이고 픽셀 값 범위(0~255)도 정규화가 안 돼 있습니다. `transform`은 이 격차를 메워주는 전처리 함수(또는 함수들의 묶음)로, PIL Image를 Tensor로 바꾸고, 이미지 크기를 모델 입력 크기로 통일하고(`Resize`), 픽셀 값을 정규화하고(`Normalize`), 필요하면 데이터를 무작위로 변형(augmentation)하는 역할을 모두 이 한 단계에서 처리합니다.
+
+`Dataset`은 생성자에서 `transform`을 인자로 받아 저장만 해두고, 실제 적용은 `__getitem__`이 호출되는 순간 — 즉 `DataLoader`가 배치를 만들려고 샘플을 하나씩 꺼낼 때 — 에 일어납니다. 수천 장의 이미지를 미리 다 변환해서 메모리에 올려두는 대신, 필요할 때마다 하나씩 처리하는 지연(lazy) 구조이기 때문에 메모리를 절약할 수 있습니다.
+
+실제 사용은 `torchvision.transforms`의 `Compose`로 여러 단계를 순서대로 묶는 방식입니다.
+
+```python
+from torchvision import transforms
+
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),                      # PIL/ndarray -> Tensor, 0~1로 스케일
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                          std=[0.229, 0.224, 0.225]),
+])
+```
+
+이렇게 만든 `transform` 객체를 `Dataset(..., transform=transform)`처럼 넘기면, `__getitem__` 안의 `self.transform(img)`가 이 파이프라인을 순서대로 실행합니다.
+
+## 37. ToTensor: 값 범위와 축 순서 변환
+
+`ToTensor()`는 PIL Image(또는 numpy 배열)를 PyTorch 텐서로 바꾸면서 두 가지를 동시에 처리합니다. 하나는 값의 범위로, `uint8` 0~255를 `float32` 0.0~1.0으로 스케일링합니다(255로 나눔). 다른 하나는 축(shape)의 순서로, `(Height, Width, Channel)`을 `(Channel, Height, Width)`로 바꿉니다.
+
+이미지 라이브러리(PIL, OpenCV, matplotlib 등)는 픽셀을 화면에 그리는 관점이라 "가로 x 세로 x 채널" 순서가 자연스러운 반면, PyTorch의 `nn.Conv2d`는 채널이 먼저 오는 `(C, H, W)` 순서를 기대하도록 설계되어 있습니다. 그래서 `ToTensor`가 이 축 순서 변환(HWC → CHW)까지 함께 처리해줍니다. `DataLoader`가 배치로 묶으면 여기에 batch 차원이 하나 더 붙어서 최종적으로 `(batch, C, H, W)`가 됩니다.
+
+## 38. Normalize: mean/std의 의미
+
+`Normalize(mean, std)`는 `ToTensor`가 끝낸 [0, 1] 범위의 텐서를 채널별로 `(input - mean) / std` 식으로 다시 조정합니다. 예를 들어 `mean=[0.485, 0.456, 0.406]`, `std=[0.229, 0.224, 0.225]`라면 R/G/B 채널 각각 자기 평균을 빼고 표준편차로 나눠서, 대략 평균 0·표준편차 1 근처 분포로 만듭니다.
+
+픽셀 값이 [0,1]처럼 항상 양수면 활성화값·gradient가 한쪽으로 치우치기 쉬운데, 평균을 0 근처로 옮기면 학습이 더 안정적이고 빠르게 수렴합니다. 위에서 예로 든 숫자는 임의의 값이 아니라 ImageNet 데이터셋 전체의 채널별 평균/표준편차입니다. ImageNet으로 사전학습(pretrained)된 모델(ResNet, VGG 등)을 쓸 때는 그 모델이 학습될 때 본 것과 같은 분포로 입력을 맞춰줘야 성능이 제대로 나옵니다. 반대로 처음부터 직접 학습하는 모델이면 꼭 이 값일 필요는 없고, 본인 데이터셋의 mean/std를 계산해서 써도 됩니다.
+
+여기서 mean/std는 "이 데이터셋 전체에서 각 채널(R/G/B)의 픽셀 값들이 평균적으로 얼마이고 얼마나 퍼져있는가"를 나타내는 통계값입니다. 한 장의 이미지 안에서 구하는 게 아니라, 데이터셋에 있는 모든 이미지의 모든 픽셀을 채널별로 모아 평균과 표준편차를 낸 것입니다 — 이미지 하나의 shape이 `(3, H, W)`라면, R 채널만 떼어내 모든 이미지·모든 픽셀 위치 값을 다 모은 뒤 그 값들의 평균/표준편차를 낸 게 `mean[0]`, `std[0]`입니다.
+
+`ToTensor`는 "이미지 형식을 PyTorch가 쓸 수 있는 텐서 shape/스케일로 변환"하고, `Normalize`는 "그 텐서의 분포를 모델이 학습하기 좋은 형태(평균 0 근처)로 조정"하는, 역할이 다른 별개의 전처리 단계입니다. 그래서 `Compose`로 항상 `ToTensor` → `Normalize` 순서로 묶어 씁니다.
+
+## 39. Data Augmentation
+
+학습 데이터가 부족하거나 다양성이 떨어질 때, 원본 이미지에 무작위 변형을 가해서 매 epoch마다 조금씩 다른 버전을 모델에게 보여주는 기법입니다. 실제로 새 데이터를 모으는 게 아니라, 가진 데이터를 여러 번 다르게 보여주는 방식입니다.
+
+모델이 학습 데이터의 사소한 특징(배경, 각도, 밝기 등)까지 외워버리면 과적합(overfitting)이 생깁니다. 예를 들어 고양이 사진이 전부 정면을 보고 있으면, 모델이 "고양이 = 정면 얼굴"로 잘못 학습할 수 있습니다. Augmentation으로 좌우 반전·회전·크롭된 버전을 섞어 보여주면 모델이 이런 변형에도 여전히 고양이라는 더 본질적인 특징을 배우게 되므로, 일반화 성능(generalization)을 올리는 정규화(regularization) 기법의 일종입니다.
+
+Augmentation은 `transform` 파이프라인 안에 그냥 하나의 단계로 들어갑니다. 다만 학습(train)용과 검증/테스트(val/test)용 transform을 다르게 만드는 것이 핵심입니다.
+
+```python
+train_transform = transforms.Compose([
+    transforms.RandomResizedCrop(224),      # 무작위 위치/크기로 잘라 리사이즈
+    transforms.RandomHorizontalFlip(p=0.5), # 50% 확률로 좌우 반전
+    transforms.ColorJitter(brightness=0.2, contrast=0.2),  # 밝기/대비 랜덤 변화
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[...], std=[...]),
+])
+
+val_transform = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),   # 검증은 항상 같은 결과가 나와야 하므로 랜덤 요소 없음
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[...], std=[...]),
+])
+```
+
+검증/테스트 데이터에 무작위 변형을 넣으면 매번 다른 이미지로 평가하는 셈이 되어 성능 측정이 불안정해지고, 애초에 실제 배포 환경에서 볼 입력을 평가해야 하므로 여기서는 리사이즈·크롭 정도의 결정적(deterministic) 전처리만 씁니다.
+
+자주 쓰는 augmentation은 크게 네 종류로 나뉩니다. 기하학적 변형(`RandomHorizontalFlip`, `RandomRotation`, `RandomResizedCrop`), 색상 변형(`ColorJitter`로 밝기/대비/채도/색조 조정), 노이즈/가림(`RandomErasing`으로 일부 영역을 지움), 그리고 두 이미지·라벨을 섞는 고급 혼합 기법(Mixup, CutMix)입니다.
+
+`__getitem__`이 호출될 때마다 `self.transform(img)`가 실행되므로, 같은 이미지라도 epoch마다 랜덤 시드가 달라 매번 다르게 변형된 버전이 모델에 들어갑니다. 그래서 원본 데이터셋 크기는 그대로지만, 실질적으로 모델이 보는 데이터의 다양성은 훨씬 커지는 효과가 있습니다.
+
+## 40. Batch Size
+
+한 번의 학습 스텝(forward → loss → backward → update)에서 한꺼번에 처리할 이미지(샘플) 개수입니다. 예를 들어 이미지 1200장, `batch_size=4`면 한 스텝마다 4장씩 묶어서 모델에 넣고, 그 4장의 평균 loss로 한 번 파라미터를 업데이트합니다.
+
+GPU는 여러 샘플을 동시에 행렬 연산으로 처리하는 데 최적화되어 있어서, 묶어서 처리하는 것이 훨씬 빠릅니다(병렬 연산 활용). 한 장씩(`batch_size=1`)이면 그 한 장의 특이한 노이즈에 파라미터가 휘둘려서 학습이 불안정해지는데, 여러 장을 평균 내면 gradient가 더 안정적입니다.
+
+batch 크기에는 트레이드오프가 있습니다. 작은 batch(예: 8)는 메모리 사용이 적고, gradient에 노이즈가 많아 오히려 일반화에 도움이 되기도 하지만, 병렬성을 덜 활용해 속도가 느리고 1 epoch당 스텝 수가 많아집니다(1200/8=150 스텝). 큰 batch(예: 256)는 메모리를 많이 써서 GPU 메모리 한계에 잘 걸리지만, gradient가 안정적이고 스텝당 속도가 빨라 1 epoch당 스텝 수가 적습니다(1200/256≈5 스텝).
+
+## 41. Shuffle
+
+매 epoch 시작 시 데이터셋의 순서를 무작위로 섞는 것으로, `DataLoader(dataset, batch_size=4, shuffle=True)`처럼 설정합니다.
+
+셔플을 안 하면 매 epoch마다 이미지가 항상 같은 순서로, 같은 조합으로 배치가 묶입니다. 예를 들어 데이터가 "고양이 600장 다음에 강아지 600장" 순으로 정렬돼 있다면, 셔플 없이는 초반 배치들은 전부 고양이만, 후반은 전부 강아지만 보게 되어 모델이 학습 중간에 급격히 편향될 수 있습니다. 셔플하면 매 epoch 배치 구성이 달라져서 이런 순서 편향을 없애고, 더 일반화된 학습이 됩니다.
+
+그래서 학습(train)에는 항상 `shuffle=True`를 써서 순서 편향을 방지하고, 검증/테스트(val/test)에는 보통 `shuffle=False`를 씁니다. 평가는 순서가 결과에 영향을 주지 않아야 하고, 굳이 섞을 이유가 없으며, 결과 확인·디버깅 시 순서가 유지되는 편이 더 편하기 때문입니다.
+
+## 42. Train / Valid / Test Split
+
+전체 데이터셋을 용도가 다른 세 그룹으로 나누는 것입니다. Train은 실제 파라미터를 갱신하는 데 쓰이고, Validation은 학습 중간중간 "지금 잘 되고 있나"를 확인하며 하이퍼파라미터 튜닝·조기종료(early stopping)를 판단하는 데 쓰이고(갱신에는 관여하지 않음), Test는 학습·튜닝이 전부 끝난 뒤 딱 한 번 최종 성능을 확인하는 데 쓰입니다(마찬가지로 갱신에는 관여하지 않음).
+
+Train만으로 평가하면 "외운 건지 진짜 이해한 건지" 구분이 안 됩니다(과적합 여부 확인 불가). Validation 없이 Test만 있으면, 모델 구조나 하이퍼파라미터(learning rate, batch size 등)를 튜닝할 때마다 Test 결과를 들여다보게 되고, 그러다 보면 결국 Test 데이터에도 간접적으로 맞춰서 튜닝하게 됩니다 — 이러면 Test가 더 이상 "본 적 없는 데이터"가 아니게 되어 최종 성능 평가가 왜곡됩니다. 그래서 Validation은 튜닝하면서 계속 들여다봐도 되는 시험지, Test는 모든 게 끝난 후 딱 한 번만 채점하는 진짜 시험지 역할로 분리합니다.
+
+데이터가 많으면 대략 70/15/15 또는 80/10/10 비율을, 데이터가 매우 크면(수백만 장) validation·test 비율을 98/1/1처럼 훨씬 작게 잡기도 합니다.
+
+```python
+train_dataset, val_dataset, test_dataset = split(full_dataset, ratios=[0.7, 0.15, 0.15])
+
+train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)   # 학습용: 섞음
+val_loader   = DataLoader(val_dataset,   batch_size=4, shuffle=False)  # 검증용: 안 섞음
+test_loader  = DataLoader(test_dataset,  batch_size=4, shuffle=False)  # 테스트용: 안 섞음
+
+for epoch in range(num_epochs):
+    train(model, train_loader, ...)              # 파라미터 갱신
+    val_loss = evaluate(model, val_loader, ...)   # 갱신 없이 성능만 확인
+    # val_loss 기준으로 early stopping, 모델 저장 등 결정
+
+test_acc = evaluate(model, test_loader, ...)   # 학습 다 끝난 후 마지막에 딱 1번
+```
+
+Validation·Test에는 augmentation(랜덤 crop, flip 등)을 넣지 않는 것이 원칙입니다 — 항상 같은 조건으로 평가해야 결과를 신뢰할 수 있기 때문입니다.
+
+## 43. random_split
+
+`torch.utils.data.random_split`은 앞서 얘기한 train/valid/test 분할을 실제 코드로 구현할 때 가장 많이 쓰는 방법입니다. 하나의 `Dataset`을 무작위로 여러 개의 작은 `Dataset`(정확히는 `Subset`)으로 쪼개줍니다.
+
+```python
+from torch.utils.data import random_split
+
+full_dataset = ImageDataset(file_paths, labels, transform=transform)  # 전체 1200장
+
+train_dataset, val_dataset, test_dataset = random_split(
+    full_dataset,
+    lengths=[840, 180, 180],   # 70% / 15% / 15% (개수로 지정)
+)
+```
+
+`lengths`에는 개수 대신 합이 1이 되는 비율(실수)을 넣어도 됩니다(`[0.7, 0.15, 0.15]`).
+
+내부적으로는 `len(full_dataset)`개의 인덱스(`0, 1, ..., 1199`)를 만들고, 그 인덱스들을 무작위로 섞은 뒤, `lengths`에 지정한 개수만큼 잘라서 각각 `Subset` 객체로 반환합니다. 즉 실제 데이터를 복사하는 게 아니라 "원본 데이터셋 + 이 인덱스들만 쓴다"는 정보만 가진 얇은 래퍼(`Subset`)를 만드는 것이라 메모리를 거의 추가로 쓰지 않습니다.
+
+기본적으로 매번 실행할 때마다 다르게 섞이므로, 같은 분할을 재현하고 싶다면 시드를 고정한 `generator`를 넘겨줘야 합니다.
+
+```python
+import torch
+
+g = torch.Generator().manual_seed(42)
+train_dataset, val_dataset, test_dataset = random_split(
+    full_dataset, lengths=[0.7, 0.15, 0.15], generator=g
+)
+```
+
+`Subset`도 `Dataset`이라서 그대로 `DataLoader`에 넣을 수 있습니다.
+
+주의할 점이 두 가지 있습니다. 첫째, 클래스 비율을 보장하지 않습니다 — 단순히 인덱스를 무작위로 섞어서 자르기 때문에, 예를 들어 고양이/강아지 데이터가 불균형하면 train에는 고양이가 많고 val에는 강아지가 많이 몰리는 등 우연히 클래스 비율이 안 맞을 수 있습니다. 클래스 비율까지 맞추고(stratified split) 싶다면 `sklearn.model_selection.train_test_split(..., stratify=labels)`처럼 별도 방법을 써야 합니다. 둘째, transform 공유 문제가 있습니다 — `random_split`은 원본 `full_dataset`에 이미 지정된 `transform`을 그대로 물려받는 `Subset`을 만들기 때문에, train은 augmentation을 쓰고 val/test는 안 쓰고 싶다면 이렇게 나눈 뒤 직접 val_dataset의 transform을 바꿔주는 추가 처리가 필요합니다. 보통은 `Dataset`을 2개 따로 만들고 각각 다른 transform으로 초기화한 뒤, 같은 인덱스 리스트를 양쪽에 적용하는 방식으로 우회합니다.
+
+## 44. 데이터 파이프라인 디버깅 체크리스트
+
+데이터 파이프라인에서 겪는 흔한 증상과 의심해볼 원인을 짝지어두면 문제를 빠르게 좁혀갈 수 있습니다. loss가 처음부터 NaN이면 Normalize 값 오류, learning rate 과다, 라벨의 결측/이상값을 의심합니다. loss는 줄어드는데 val acc가 안 오르면 train/val 라벨 매칭 오류, 데이터 누수(val이 train과 겹침), val에 augmentation이 잘못 들어간 경우를 의심합니다. 특정 클래스만 계속 틀리면 클래스 불균형이나 split 시 그 클래스가 한쪽에 몰린 것을 의심합니다. 배치마다 shape 에러가 나면 transform에 Resize/CenterCrop이 빠졌거나 흑백/RGB 이미지가 섞여 있는 것을 의심합니다. 매 실행마다 결과가 달라지고 재현이 안 되면 split 시드 미고정을 의심합니다(shuffle 자체는 문제가 아니지만, `random_split`/`train_test_split`의 시드를 안 고정한 경우). 학습은 잘 되는데 실제 서비스에서 성능이 낮으면 배포 시 전처리(mean/std, resize)가 학습 때와 다른 것을 의심합니다.

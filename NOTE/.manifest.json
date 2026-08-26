@@ -69,6 +69,11 @@
       "group": "07-딥러닝기초와PyTorch",
       "hash": "aac389fb8ad048ffcc543836e0fe3d4963c6dc31a229ea9c92db8cca055dd980",
       "processed_at": "2026-08-25T06:39:00+00:00"
+    },
+    "260826.md": {
+      "group": "07-딥러닝기초와PyTorch",
+      "hash": "b31204fd4f568747a1a7b921ba1de578fb165e4b99155b5772bfd418349c8584",
+      "processed_at": "2026-08-26T06:09:20+00:00"
     }
   }
 }
