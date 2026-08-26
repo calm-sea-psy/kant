@@ -829,48 +829,11 @@ train_dataset, val_dataset, test_dataset = random_split(
 
 ## 44. SubsetWithTransform: transform 공유 문제를 근본적으로 분리하는 패턴
 
-`random_split`의 transform 공유 문제를 우회하는 또 다른 방법은, 원본 `Dataset`에는 아예 `transform`을 지정하지 않고, transform을 직접 소유하는 별도의 wrapper 클래스를 만드는 것입니다. 즉 "데이터가 뭔지"(원본 Dataset)와 "어떻게 전처리할지"(transform)를 서로 다른 객체의 책임으로 완전히 분리합니다.
-
-```python
-class SubsetWithTransform(Dataset):
-    def __init__(self, dataset, indices, transform=None):
-        self.dataset = dataset       # raw_dataset을 그대로 참조 (복사 아님)
-        self.indices = indices       # random_split이 뽑아준 인덱스 목록
-        self.transform = transform   # 이 wrapper가 직접 소유하는 transform
-
-    def __len__(self):
-        return len(self.indices)
-
-    def __getitem__(self, idx):
-        img, label = self.dataset[self.indices[idx]]  # raw_dataset은 원본(미변형) 이미지 반환
-        if self.transform:
-            img = self.transform(img)                   # 여기서 비로소 transform 적용
-        return img, label
-```
-
-`__init__`은 원본 데이터셋(`dataset`), 이 그룹에 속한 인덱스 목록(`indices`), 이 그룹 전용 `transform` 세 가지를 받아서 저장만 합니다. `__len__`은 전체 데이터 개수가 아니라 자기 몫의 인덱스 개수(`len(self.indices)`)를 반환하므로, `train_dataset`은 840개, `valid_dataset`은 180개처럼 각자 크기가 맞게 나옵니다. `__getitem__`은 `raw_dataset`에서 transform 없이 원본 이미지를 가져온 뒤, 이 wrapper가 들고 있는 transform을 그 자리에서 적용합니다 — 그래서 같은 `raw_dataset`을 참조해도 wrapper마다 다른 결과가 나옵니다.
+`random_split`의 transform 공유 문제를 우회하는 또 다른 방법은, 원본 `Dataset`에는 아예 `transform`을 지정하지 않고, transform을 직접 소유하는 별도의 wrapper 클래스(`SubsetWithTransform`)를 만드는 것입니다. 즉 "데이터가 뭔지"(원본 Dataset)와 "어떻게 전처리할지"(transform)를 서로 다른 객체의 책임으로 완전히 분리합니다.
 
 일반 `torch.utils.data.Subset`과 비교하면, `Subset`은 `transform`이라는 개념 자체가 없고 원본의 `__getitem__`을 그대로 호출하기만 하는 반면, `SubsetWithTransform`은 `transform` 속성과 적용 로직을 직접 갖고 있다는 점이 유일하고 결정적인 차이입니다.
 
-사용할 때는 `random_split`을 "인덱스를 나누는 계산기"로만 쓰고, 그 결과로 나온 `Subset`의 `.indices`만 꺼내서 `SubsetWithTransform`에 다시 담습니다.
-
-```python
-raw_dataset = ImageDataset(file_paths, labels, transform=None)   # 원본은 transform 없이 하나만
-
-train_part, valid_part = random_split(raw_dataset, [0.8, 0.2])   # 여기서 "나누기"가 끝남
-                                                                   # (train_part, valid_part는 이미
-                                                                   # 서로 겹치지 않는 인덱스를 가짐)
-
-train_dataset = SubsetWithTransform(
-    raw_dataset, train_part.indices, train_transform             # train_part가 이미 갖고 있던 인덱스만 꺼내
-)                                                                  # transform 붙은 새 wrapper에 넣음
-
-valid_dataset = SubsetWithTransform(
-    raw_dataset, valid_part.indices, valid_transform              # valid_part도 마찬가지
-)
-```
-
-`train_part`, `valid_part`를 최종 데이터셋으로 그대로 쓰는 게 아니라, 그 안의 인덱스만 재사용해서 `SubsetWithTransform`으로 다시 감싸는 것이 핵심입니다. 원본 데이터(`raw_dataset`)를 복제하지 않고도, "인덱스 분리"와 "transform 적용"이라는 두 관심사를 완전히 분리할 수 있어 지금까지 다룬 방법 중 가장 깔끔한 형태입니다.
+사용할 때는 `random_split`을 "인덱스를 나누는 계산기"로만 쓰고, 그 결과로 나온 `Subset`의 `.indices`만 꺼내서 `SubsetWithTransform`에 다시 담습니다. 즉 이미지 분류/CV 작업처럼 train에는 augmentation을, val/test에는 결정적 전처리만 줘야 하는 경우, `random_split`의 언패킹 결과를 그대로 최종 데이터셋으로 쓰지 않고 인덱스만 뽑아서 `SubsetWithTransform` 같은 걸로 다시 감싸는 한 단계가 추가로 필요합니다. 원본 데이터를 복제하지 않고도 "인덱스 분리"와 "transform 적용"이라는 두 관심사를 완전히 분리할 수 있어, 지금까지 다룬 방법 중 가장 깔끔한 형태입니다.
 
 ## 45. 데이터 파이프라인 디버깅 체크리스트
 
