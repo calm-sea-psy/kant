@@ -827,6 +827,51 @@ train_dataset, val_dataset, test_dataset = random_split(
 
 주의할 점이 두 가지 있습니다. 첫째, 클래스 비율을 보장하지 않습니다 — 단순히 인덱스를 무작위로 섞어서 자르기 때문에, 예를 들어 고양이/강아지 데이터가 불균형하면 train에는 고양이가 많고 val에는 강아지가 많이 몰리는 등 우연히 클래스 비율이 안 맞을 수 있습니다. 클래스 비율까지 맞추고(stratified split) 싶다면 `sklearn.model_selection.train_test_split(..., stratify=labels)`처럼 별도 방법을 써야 합니다. 둘째, transform 공유 문제가 있습니다 — `random_split`은 원본 `full_dataset`에 이미 지정된 `transform`을 그대로 물려받는 `Subset`을 만들기 때문에, train은 augmentation을 쓰고 val/test는 안 쓰고 싶다면 이렇게 나눈 뒤 직접 val_dataset의 transform을 바꿔주는 추가 처리가 필요합니다. 보통은 `Dataset`을 2개 따로 만들고 각각 다른 transform으로 초기화한 뒤, 같은 인덱스 리스트를 양쪽에 적용하는 방식으로 우회합니다.
 
-## 44. 데이터 파이프라인 디버깅 체크리스트
+## 44. SubsetWithTransform: transform 공유 문제를 근본적으로 분리하는 패턴
+
+`random_split`의 transform 공유 문제를 우회하는 또 다른 방법은, 원본 `Dataset`에는 아예 `transform`을 지정하지 않고, transform을 직접 소유하는 별도의 wrapper 클래스를 만드는 것입니다. 즉 "데이터가 뭔지"(원본 Dataset)와 "어떻게 전처리할지"(transform)를 서로 다른 객체의 책임으로 완전히 분리합니다.
+
+```python
+class SubsetWithTransform(Dataset):
+    def __init__(self, dataset, indices, transform=None):
+        self.dataset = dataset       # raw_dataset을 그대로 참조 (복사 아님)
+        self.indices = indices       # random_split이 뽑아준 인덱스 목록
+        self.transform = transform   # 이 wrapper가 직접 소유하는 transform
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        img, label = self.dataset[self.indices[idx]]  # raw_dataset은 원본(미변형) 이미지 반환
+        if self.transform:
+            img = self.transform(img)                   # 여기서 비로소 transform 적용
+        return img, label
+```
+
+`__init__`은 원본 데이터셋(`dataset`), 이 그룹에 속한 인덱스 목록(`indices`), 이 그룹 전용 `transform` 세 가지를 받아서 저장만 합니다. `__len__`은 전체 데이터 개수가 아니라 자기 몫의 인덱스 개수(`len(self.indices)`)를 반환하므로, `train_dataset`은 840개, `valid_dataset`은 180개처럼 각자 크기가 맞게 나옵니다. `__getitem__`은 `raw_dataset`에서 transform 없이 원본 이미지를 가져온 뒤, 이 wrapper가 들고 있는 transform을 그 자리에서 적용합니다 — 그래서 같은 `raw_dataset`을 참조해도 wrapper마다 다른 결과가 나옵니다.
+
+일반 `torch.utils.data.Subset`과 비교하면, `Subset`은 `transform`이라는 개념 자체가 없고 원본의 `__getitem__`을 그대로 호출하기만 하는 반면, `SubsetWithTransform`은 `transform` 속성과 적용 로직을 직접 갖고 있다는 점이 유일하고 결정적인 차이입니다.
+
+사용할 때는 `random_split`을 "인덱스를 나누는 계산기"로만 쓰고, 그 결과로 나온 `Subset`의 `.indices`만 꺼내서 `SubsetWithTransform`에 다시 담습니다.
+
+```python
+raw_dataset = ImageDataset(file_paths, labels, transform=None)   # 원본은 transform 없이 하나만
+
+train_part, valid_part = random_split(raw_dataset, [0.8, 0.2])   # 여기서 "나누기"가 끝남
+                                                                   # (train_part, valid_part는 이미
+                                                                   # 서로 겹치지 않는 인덱스를 가짐)
+
+train_dataset = SubsetWithTransform(
+    raw_dataset, train_part.indices, train_transform             # train_part가 이미 갖고 있던 인덱스만 꺼내
+)                                                                  # transform 붙은 새 wrapper에 넣음
+
+valid_dataset = SubsetWithTransform(
+    raw_dataset, valid_part.indices, valid_transform              # valid_part도 마찬가지
+)
+```
+
+`train_part`, `valid_part`를 최종 데이터셋으로 그대로 쓰는 게 아니라, 그 안의 인덱스만 재사용해서 `SubsetWithTransform`으로 다시 감싸는 것이 핵심입니다. 원본 데이터(`raw_dataset`)를 복제하지 않고도, "인덱스 분리"와 "transform 적용"이라는 두 관심사를 완전히 분리할 수 있어 지금까지 다룬 방법 중 가장 깔끔한 형태입니다.
+
+## 45. 데이터 파이프라인 디버깅 체크리스트
 
 데이터 파이프라인에서 겪는 흔한 증상과 의심해볼 원인을 짝지어두면 문제를 빠르게 좁혀갈 수 있습니다. loss가 처음부터 NaN이면 Normalize 값 오류, learning rate 과다, 라벨의 결측/이상값을 의심합니다. loss는 줄어드는데 val acc가 안 오르면 train/val 라벨 매칭 오류, 데이터 누수(val이 train과 겹침), val에 augmentation이 잘못 들어간 경우를 의심합니다. 특정 클래스만 계속 틀리면 클래스 불균형이나 split 시 그 클래스가 한쪽에 몰린 것을 의심합니다. 배치마다 shape 에러가 나면 transform에 Resize/CenterCrop이 빠졌거나 흑백/RGB 이미지가 섞여 있는 것을 의심합니다. 매 실행마다 결과가 달라지고 재현이 안 되면 split 시드 미고정을 의심합니다(shuffle 자체는 문제가 아니지만, `random_split`/`train_test_split`의 시드를 안 고정한 경우). 학습은 잘 되는데 실제 서비스에서 성능이 낮으면 배포 시 전처리(mean/std, resize)가 학습 때와 다른 것을 의심합니다.

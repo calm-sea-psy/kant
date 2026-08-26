@@ -235,4 +235,5 @@
 - **Shuffle**: 매 epoch마다 데이터 순서를 무작위로 섞음. train은 순서 편향 방지를 위해 항상 True, val/test는 보통 False
 - **Train/Valid/Test Split**: train=파라미터 갱신, val=갱신 없이 튜닝·조기종료 판단, test=최종 성능을 딱 한 번 확인. 3분할해야 튜닝 과정에서 test가 오염되지 않음
 - **random_split**: `Dataset`을 인덱스 기반으로 무작위 분할해 `Subset`을 반환(메모리 복사 없음). 클래스 비율 미보장, transform 공유 문제 있음 — stratify나 별도 transform Dataset+동일 인덱스로 우회
+- **SubsetWithTransform**: 원본 Dataset은 transform 없이 두고, `random_split`은 인덱스만 뽑는 데 쓴 뒤, 그 인덱스+원하는 transform을 직접 소유하는 wrapper 클래스로 감싸는 패턴. "데이터"와 "전처리"를 완전히 분리해 transform 공유 문제를 근본적으로 해결
 - **데이터 파이프라인 디버깅 매핑**: NaN loss→Normalize/lr/라벨 이상, val acc 정체→라벨 매칭·데이터 누수·val augmentation 오류, 특정 클래스만 오답→클래스 불균형, shape 에러→Resize 누락·채널 혼재, 재현 안 됨→split 시드 미고정, 배포 후 성능 저하→전처리 불일치
