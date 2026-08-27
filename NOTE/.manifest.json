@@ -2,8 +2,8 @@
   "til_files": {
     "260805.md": {
       "group": "01-선형대수와행렬분해",
-      "hash": "2a0f5296babeab2ab4f18ee25335d9f96289d2029a7a1f3acda31e9f5d68ed60",
-      "processed_at": "2026-08-14T04:11:39+00:00"
+      "hash": "94f699a6fe282a3a7d282d9803858b80986f1036794782d4bebb9ec5ecef5737",
+      "processed_at": "2026-08-27T06:09:39+00:00"
     },
     "260806.md": {
       "group": "01-선형대수와행렬분해",
@@ -12,28 +12,28 @@
     },
     "260807.md": {
       "group": "01-선형대수와행렬분해",
-      "hash": "3f4a2670ecfe96309d15882382d05ee66992cd3dc2b791eb2d6297fa7a837fdc",
-      "processed_at": "2026-08-14T04:11:39+00:00"
+      "hash": "0fd59a1f927ebe226b732fc282be5e93057ef2107a3eaba023bc3e00565d890a",
+      "processed_at": "2026-08-27T06:09:04+00:00"
     },
     "260810.md": {
       "group": "02-트랜스포머수학",
-      "hash": "9650b6a86dc80f809a0d09b096878584b3f1ef8d574ca072342b7bf9cdf1e67a",
-      "processed_at": "2026-08-14T04:11:39+00:00"
+      "hash": "5c50b185bacadb639f1f55d00d51b7b4a0fb3e853c71fcd6fc266d01d2bde0dc",
+      "processed_at": "2026-08-27T06:09:04+00:00"
     },
     "260811.md": {
       "group": "03-지도비지도학습",
-      "hash": "5f285ac5abc13dea173b708d1cbe58490c3f2ca3ec561ced1813c091fd8052f0",
-      "processed_at": "2026-08-14T04:11:39+00:00"
+      "hash": "63ec1a9207839eb1ff960c78d07b5d08b9c8153997e9e7dfc2e6226ca8513653",
+      "processed_at": "2026-08-27T06:09:05+00:00"
     },
     "260812.md": {
       "group": "04-앙상블학습",
-      "hash": "19f17b9de636b6ffc06aa487ef4bfd0f67cab620979656e3f0be5f5b91611938",
-      "processed_at": "2026-08-14T04:11:39+00:00"
+      "hash": "dab9a82434a3e2971a56b8bfcaf58df382e245f2fb68ce0af9f29cd85c24106c",
+      "processed_at": "2026-08-27T06:09:05+00:00"
     },
     "260813.md": {
       "group": "05-편향분산과규제",
-      "hash": "1769ee60e23506a03428a8b3a47549b4b4cb11ac25c093a6b3595eb6a4d8e60e",
-      "processed_at": "2026-08-14T04:11:39+00:00"
+      "hash": "f0eaaac9255d13bc99a61405aa4925fdb9643e6e1a2014092dfd75b560a02164",
+      "processed_at": "2026-08-27T06:09:05+00:00"
     },
     "260814.md": {
       "group": "06-평가지표와데이터누수",
@@ -42,8 +42,8 @@
     },
     "260818.md": {
       "group": "06-평가지표와데이터누수",
-      "hash": "d9d437c86749efd0fec9f3fdc2196761cdac0f418a1d99350d1a22cf0604ec92",
-      "processed_at": "2026-08-19T03:23:41+00:00"
+      "hash": "439c3b458c270f79bbd3e0e568e45607501aec2d4c87d51ec7766d0f3f71bd9f",
+      "processed_at": "2026-08-27T06:09:05+00:00"
     },
     "260819.md": {
       "group": "07-딥러닝기초와PyTorch",
@@ -52,8 +52,8 @@
     },
     "260820.md": {
       "group": "07-딥러닝기초와PyTorch",
-      "hash": "1afd212b4b2a23c42e6b22a8df9840adb8e75e2a1cd715043e97e180ac77a6f0",
-      "processed_at": "2026-08-20T03:59:06+00:00"
+      "hash": "e12372c28c2dd77e2c195281edbc76f25c8f30afc60b6b59378c8688b3a81b15",
+      "processed_at": "2026-08-27T06:09:05+00:00"
     },
     "260821.md": {
       "group": "07-딥러닝기초와PyTorch",
