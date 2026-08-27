@@ -1,6 +1,6 @@
 # 딥러닝 기초와 PyTorch
 
-> 출처 TIL: 260819, 260820, 260821, 260824, 260825
+> 출처 TIL: 260819, 260820, 260821, 260824, 260825, 260827
 
 ## 1. 머신러닝과 딥러닝의 접근 차이
 
@@ -73,42 +73,15 @@ RNN/Transformer 계열은 `batch_first` 옵션으로 batch 차원의 위치가 �
 
 `squeeze`와 `unsqueeze`는 텐서 shape에서 크기가 1인 차원을 없애거나(squeeze) 새로 끼워 넣는(unsqueeze) 함수입니다. 값 자체는 전혀 바뀌지 않고 차원(축) 구조만 바뀝니다.
 
-**unsqueeze: 크기 1인 차원을 추가**
+**unsqueeze: 크기 1인 차원을 추가**. 인자는 "몇 번째 위치에 새 차원을 끼워넣을지"를 뜻합니다. `(3,)` 벡터에 `unsqueeze(0)`을 하면 맨 앞에 크기 1인 차원이 생겨 `(1, 3)`(행 하나짜리 행렬)이 되고, `unsqueeze(1)`을 하면 두 번째 위치에 생겨 `(3, 1)`(열 하나짜리 행렬)이 됩니다.
 
-```python
-x = torch.tensor([1, 2, 3])       # shape: (3,)
-x.unsqueeze(0)                     # shape: (1, 3)  -> tensor([[1, 2, 3]])
-x.unsqueeze(1)                     # shape: (3, 1)  -> tensor([[1], [2], [3]])
-```
-인자는 "몇 번째 위치에 새 차원을 끼워넣을지"를 뜻합니다. `0`이면 맨 앞, `1`이면 두 번째 위치에 크기 1인 차원이 생깁니다.
-
-**squeeze: 크기 1인 차원을 제거**
-
-```python
-y = torch.zeros(1, 3, 1)          # shape: (1, 3, 1)
-y.squeeze()                        # shape: (3,)     -> 크기 1인 차원 전부 제거
-y.squeeze(0)                       # shape: (3, 1)    -> 0번 차원만 제거
-y.squeeze(2)                       # shape: (1, 3)    -> 2번 차원만 제거
-```
-인자 없이 쓰면 크기가 1인 차원을 전부 없애고, 인자를 주면 그 위치의 차원만 없앱니다(그 위치가 1이 아니면 아무 일도 일어나지 않습니다).
+**squeeze: 크기 1인 차원을 제거**. 인자 없이 쓰면 크기가 1인 차원을 전부 없애고(`(1, 3, 1)` → `(3,)`), 인자를 주면 그 위치의 차원만 없앱니다(`(1, 3, 1)`에 `squeeze(0)` → `(3, 1)`, `squeeze(2)` → `(1, 3)`). 지정한 위치가 1이 아니면 아무 일도 일어나지 않습니다.
 
 **왜 필요한가**
 
-`nn.Linear(16, 1)` 같은 레이어의 출력은 `(batch, 1)`처럼 항상 마지막에 크기 1인 차원이 남습니다. 이를 스칼라처럼 다루고 싶을 때는 `preds.squeeze(-1)`로 `(batch, 1)`을 `(batch,)`로 정리합니다. 반대로 1차원 벡터를 모델에 넣거나 다른 텐서와 연산하려면 batch 차원을 새로 끼워 넣어야 하는 경우가 많습니다.
+`nn.Linear(16, 1)` 같은 레이어의 출력은 `(batch, 1)`처럼 항상 마지막에 크기 1인 차원이 남습니다. 이를 스칼라처럼 다루고 싶을 때는 `preds.squeeze(-1)`로 `(batch, 1)`을 `(batch,)`로 정리합니다. 반대로 `(3,)`짜리 1차원 벡터를 모델에 넣으려면 `unsqueeze(0)`으로 `(1, 3)`으로 만들어 "샘플 1개짜리 배치"로 취급되게 해야 합니다.
 
-```python
-x_1d = torch.tensor([1.0, 2.0, 3.0])   # (3,)
-x_1d.unsqueeze(0)                       # (1, 3)  배치 차원 추가 — "샘플 1개짜리 배치"로 취급
-```
-
-**shape 불일치로 인한 잘못된 브로드캐스팅**
-
-```python
-pred = torch.tensor([1.0, 2.0, 3.0])         # shape: (3,)
-target = torch.tensor([[1.0], [2.0], [3.0]])  # shape: (3, 1)
-pred - target   # shape: (3, 3)  !! 의도치 않은 브로드캐스팅
-```
-`(3,)`와 `(3,1)`을 그냥 빼면 6절의 브로드캐스팅 규칙 때문에 `(3,3)` 행렬이 나와버리는 흔한 버그가 발생합니다. `pred.unsqueeze(1)`로 shape을 `(3,1)`로 맞춰줘야 의도한 대로 원소별 결과 `(3,1)`이 나옵니다. `nn.MSELoss()`에 입력·타깃 shape이 안 맞을 때 경고가 뜨는 것도 같은 이유입니다.
+**shape 불일치로 인한 잘못된 브로드캐스팅**: `(3,)` 형태의 `pred`와 `(3, 1)` 형태의 `target`을 그냥 빼면, 6절의 브로드캐스팅 규칙 때문에 원소별 결과가 아니라 `(3, 3)` 행렬이 나와버리는 흔한 버그가 발생합니다. `pred.unsqueeze(1)`로 shape을 `(3, 1)`로 맞춰줘야 의도한 대로 `(3, 1)` 결과가 나옵니다. `nn.MSELoss()`에 입력·타깃 shape이 안 맞을 때 경고가 뜨는 것도 같은 이유입니다.
 
 정리하면, **squeeze는 불필요한 1차원을 제거**(예: 모델 출력 후 정리), **unsqueeze는 필요한 1차원을 추가**(예: 배치 차원 맞추기, 브로드캐스팅 shape 맞추기)하는 함수입니다.
 
@@ -124,36 +97,13 @@ pred - target   # shape: (3, 3)  !! 의도치 않은 브로드캐스팅
 
 이 세 조건 중 어느 것도 만족하지 못하는 차원이 있으면 에러가 납니다.
 
-**예시 1: 스칼라 연산**
-```python
-x = torch.tensor([1, 2, 3])   # (3,)
-x + 10                         # (3,) + () -> (3,)  각 원소에 10을 더함
-```
+**예시 1: 스칼라 연산**. `(3,)` 벡터에 `+ 10`을 하면 스칼라가 각 원소에 더해져 `(3,)` 결과가 나옵니다.
 
-**예시 2: 벡터 + 행렬**
-```python
-a = torch.ones(3, 4)                 # (3, 4)
-b = torch.tensor([1., 2., 3., 4.])   # (4,)
-a + b   # (3, 4) + (4,)
-        # b 앞에 1을 채워서 (1, 4)로 간주 -> 3번 복제되어 (3, 4)와 연산
-```
-결과는 `a`의 각 행마다 `b`를 더한 `(3, 4)` 텐서입니다.
+**예시 2: 벡터 + 행렬**. `(3, 4)` 행렬과 `(4,)` 벡터를 더하면, 벡터 앞에 1이 채워져 `(1, 4)`로 간주되고, 그것이 3번 복제되어 `(3, 4)` 행렬의 각 행에 벡터를 더한 결과가 나옵니다.
 
-**예시 3: 흔히 발생하는 실수 케이스**
-```python
-pred = torch.tensor([1.0, 2.0, 3.0])          # (3,)
-target = torch.tensor([[1.0], [2.0], [3.0]])   # (3, 1)
-pred - target
-```
-뒤에서부터 비교하면, 마지막 차원은 `3` vs `1`이라 1인 쪽이 3으로 확장되고, 그다음 차원은 없음(pred는 1차원) vs `3`이라 없는 쪽이 1로 채워진 뒤 다시 3으로 확장됩니다. 결과 shape은 `(3, 3)`. `pred`가 `(1, 3)`처럼, `target`이 `(3, 1)`처럼 확장되어 사실상 모든 pred와 모든 target의 조합을 계산해버리는, 원소별 뺄셈이 아닌 외적에 가까운 결과가 나옵니다. 5절에서 다룬 것처럼 `pred.unsqueeze(1)`로 shape을 `(3, 1)`로 맞춰야 의도한 연산이 됩니다.
+**예시 3: 흔히 발생하는 실수 케이스**. `(3,)` 형태의 `pred`에서 `(3, 1)` 형태의 `target`을 빼면, 뒤에서부터 비교했을 때 마지막 차원은 `3` vs `1`이라 1인 쪽이 3으로 확장되고, 그다음 차원은 없음(pred는 1차원) vs `3`이라 없는 쪽이 1로 채워진 뒤 다시 3으로 확장됩니다. 결과 shape은 `(3, 3)`. `pred`가 `(1, 3)`처럼, `target`이 `(3, 1)`처럼 확장되어 사실상 모든 pred와 모든 target의 조합을 계산해버리는, 원소별 뺄셈이 아닌 외적에 가까운 결과가 나옵니다. 5절에서 다룬 것처럼 `pred.unsqueeze(1)`로 shape을 `(3, 1)`로 맞춰야 의도한 연산이 됩니다.
 
-**예시 4: 양쪽이 동시에 확장되는 경우**
-```python
-a = torch.ones(3, 1)   # (3, 1)
-b = torch.ones(1, 4)   # (1, 4)
-(a + b).shape           # (3, 4)
-```
-양쪽 모두 크기 1인 차원이 있으면 서로 다른 방향으로 동시에 확장되어 `(3, 4)`가 됩니다.
+**예시 4: 양쪽이 동시에 확장되는 경우**. `(3, 1)`과 `(1, 4)`를 더하면 양쪽 모두 크기 1인 차원이 서로 다른 방향으로 동시에 확장되어 `(3, 4)`가 됩니다.
 
 **요약**: 비교는 오른쪽(마지막 차원)부터 시작하며, 크기가 같거나 둘 중 하나가 1이거나 아예 없으면 통과, 그 외에는 `RuntimeError: size mismatch`가 납니다. 딥러닝에서 흔한 실수는 `(N,)`과 `(N, 1)`을 헷갈려 의도치 않게 `(N, N)`으로 확장되는 것이므로, loss 계산 전에 관련 텐서들의 `.shape`을 항상 확인하는 습관이 중요합니다.
 
@@ -228,27 +178,11 @@ nn.Sequential(
 
 ## 11. nn.Linear
 
-`nn.Linear`는 가중합 + 편향 연산(완전연결층)을 수행하는 기본 레이어로, 9절의 퍼셉트론 연산을 병렬로 여러 개 쌓아놓은 것과 같습니다.
+`nn.Linear`는 가중합 + 편향 연산(완전연결층)을 수행하는 기본 레이어로, 9절의 퍼셉트론 연산을 병렬로 여러 개 쌓아놓은 것과 같습니다. `nn.Linear(in_features=4, out_features=16)`처럼 만들면, 입력 벡터의 각 원소에 가중치를 곱해서 다 더하고 편향을 더하는 연산을 출력 차원(16개) 수만큼 각각 독립적으로 반복합니다.
 
-```python
-layer = nn.Linear(in_features=4, out_features=16)
-```
-입력 벡터의 각 원소에 가중치를 곱해서 다 더하고 편향을 더하는 연산을, 출력 차원(16개) 수만큼 각각 독립적으로 반복합니다.
+**내부 파라미터**: `layer.weight`는 shape이 `(out_features, in_features)` = `(16, 4)`인 가중치 행렬로 출력마다 입력 각각에 곱해질 계수들이고, `layer.bias`는 shape이 `(out_features,)` = `(16,)`인 편향 벡터로 출력마다 하나씩 있습니다. 이 둘이 `model.parameters()`로 옵티마이저에 전달되는 실제 학습 대상이고, `loss.backward()` → `optimizer.step()`으로 값이 갱신되는 대상입니다.
 
-**내부 파라미터**
-```python
-layer.weight   # shape: (out_features, in_features) = (16, 4)
-layer.bias     # shape: (out_features,) = (16,)
-```
-`weight`는 출력마다 입력 각각에 곱해질 계수들(학습되는 가중치 행렬), `bias`는 출력마다 하나씩 있는 편향 벡터입니다. 이 둘이 `model.parameters()`로 옵티마이저에 전달되는 실제 학습 대상이고, `loss.backward()` → `optimizer.step()`으로 값이 갱신되는 대상입니다.
-
-**batch dimension과의 관계**: `nn.Linear`는 입력의 마지막 차원만 `in_features`와 맞으면 되고, 그 앞의 모든 차원(batch 등)은 그대로 유지됩니다.
-```python
-x = torch.randn(32, 4)     # (batch=32, in_features=4)
-layer = nn.Linear(4, 16)
-layer(x).shape               # (32, 16)  -- batch는 그대로, feature만 4->16
-```
-그래서 배치 크기가 몇이든 같은 레이어 정의 하나로 처리할 수 있습니다.
+**batch dimension과의 관계**: `nn.Linear`는 입력의 마지막 차원만 `in_features`와 맞으면 되고, 그 앞의 모든 차원(batch 등)은 그대로 유지됩니다. 예를 들어 `(32, 4)` 입력을 `nn.Linear(4, 16)`에 넣으면 결과는 `(32, 16)`으로, batch 32는 그대로이고 feature만 4에서 16으로 바뀝니다. 그래서 배치 크기가 몇이든 같은 레이어 정의 하나로 처리할 수 있습니다.
 
 **"Linear"라는 이름의 의미**: 이 연산 자체는 선형 변환(곱셈과 덧셈만 있고 꺾임이나 곡률이 없음)입니다. 그래서 `nn.Linear`만 여러 개 이어붙이면 결국 하나의 `nn.Linear`와 수학적으로 동일해져 버리므로, 표현력을 가지려면 반드시 사이사이에 `nn.ReLU()` 같은 비선형 활성화함수가 있어야 합니다. `nn.Linear` 자체는 "각 뉴런이 입력을 어떻게 가중합하는가"만 담당하는 조각입니다.
 
@@ -256,24 +190,9 @@ layer(x).shape               # (32, 16)  -- batch는 그대로, feature만 4->16
 
 ## 12. flatten: 다차원 텐서를 벡터로 펼치기
 
-`flatten`은 다차원 텐서를 더 낮은 차원(보통 1차원)으로 펼치는 연산입니다. 이미지처럼 여러 차원을 가진 데이터를 `nn.Linear`(입력이 1차원 벡터여야 함)에 넣기 전에 형태를 맞춰주는 용도로 가장 많이 씁니다.
+`flatten`은 다차원 텐서를 더 낮은 차원(보통 1차원)으로 펼치는 연산입니다. 이미지처럼 여러 차원을 가진 데이터를 `nn.Linear`(입력이 1차원 벡터여야 함)에 넣기 전에 형태를 맞춰주는 용도로 가장 많이 씁니다. 예를 들어 `(2, 3)` 행렬에 `torch.flatten`을 하면 원소가 순서대로 이어붙어 `(6,)` 벡터가 됩니다.
 
-```python
-x = torch.tensor([[1, 2, 3],
-                   [4, 5, 6]])   # shape: (2, 3)
-torch.flatten(x)                 # shape: (6,)  -> tensor([1, 2, 3, 4, 5, 6])
-```
-
-**핵심: batch dimension은 보통 남겨야 함**. 이미지 배치처럼 batch 차원이 있는 텐서에 `torch.flatten`을 그냥 쓰면 batch 차원까지 뭉개져서 서로 다른 샘플이 하나로 섞여버립니다.
-```python
-imgs = torch.randn(32, 3, 28, 28)   # (batch=32, channel=3, h=28, w=28)
-torch.flatten(imgs)                  # shape: (75264,)  -- 배치 32개가 전부 한 줄로 뭉개짐! 잘못됨
-```
-그래서 실제로는 batch 차원(0번째)은 그대로 두고 그 뒤의 차원들만 펼치도록 `start_dim`을 지정합니다.
-```python
-torch.flatten(imgs, start_dim=1)     # shape: (32, 2352)  -- batch는 유지, 나머지만 3*28*28=2352로 펼침
-```
-즉 각 샘플이 "batch, 나머지 전부 펼친 벡터" 형태가 되어 `nn.Linear(2352, ...)`에 그대로 넣을 수 있습니다.
+**핵심: batch dimension은 보통 남겨야 함**. 이미지 배치처럼 batch 차원이 있는 텐서(`(32, 3, 28, 28)` 등)에 `torch.flatten`을 그냥 쓰면 batch 차원까지 뭉개져서 `(75264,)`처럼 서로 다른 32개 샘플이 한 줄로 섞여버립니다. 그래서 실제로는 `torch.flatten(imgs, start_dim=1)`처럼 batch 차원(0번째)은 그대로 두고 그 뒤의 차원들만 펼치도록 `start_dim`을 지정해서 `(32, 2352)`(2352 = 3×28×28)를 얻습니다. 즉 각 샘플이 "batch, 나머지 전부 펼친 벡터" 형태가 되어 `nn.Linear(2352, ...)`에 그대로 넣을 수 있습니다.
 
 `nn.Flatten()`은 모델 안에서 레이어처럼 쓰는 버전으로, `start_dim` 기본값이 이미 `1`이라서 `Sequential` 안에 넣기만 하면 batch 차원을 안전하게 보존하면서 나머지를 펼쳐줍니다. CNN(합성곱층) 뒤에 완전연결층을 붙일 때 거의 항상 등장하는 패턴입니다.
 ```python
@@ -298,25 +217,11 @@ y = x.view(2, 3)              # shape 변경, 메모리는 x와 100% 공유
 y[0, 0] = 99
 x                             # tensor([99,1,2,3,4,5])  -- x도 바뀜!
 ```
-단, 원본이 메모리상 연속(contiguous)이어야만 가능합니다. `transpose`, `permute` 등을 거친 텐서는 메모리 배치와 논리적 shape이 어긋나 있어(non-contiguous), `view`를 바로 쓰면 에러가 납니다.
-```python
-a = torch.randn(3, 4)
-b = a.t()
-b.view(4, 3)                  # RuntimeError!
-```
+단, 원본이 메모리상 연속(contiguous)이어야만 가능합니다. `transpose`, `permute` 등을 거친 텐서는 메모리 배치와 논리적 shape이 어긋나 있어(non-contiguous), 예를 들어 `(3, 4)` 텐서를 전치한 `(4, 3)` 텐서에 `view(4, 3)`을 바로 쓰면 `RuntimeError`가 납니다.
 
-**`reshape`**: 가능하면 `view`처럼 메모리를 공유하지만, 불가능한 경우(non-contiguous)에는 자동으로 데이터를 복사해서라도 원하는 shape을 만들어줍니다. 그래서 항상 성공하지만, 언제 복사가 일어나는지는 겉으로 잘 드러나지 않습니다.
-```python
-b = a.t()
-b.reshape(4, 3)               # 성공! 내부적으로 필요하면 복사해서 처리
-```
-메모리 공유 여부를 명확히 통제하고 싶을 때는 `view` + `.contiguous()`를 명시적으로 쓰고, 편하게 shape만 바꾸고 싶을 때는 `reshape`을 쓰는 것이 실무 기준입니다.
+**`reshape`**: 가능하면 `view`처럼 메모리를 공유하지만, 불가능한 경우(non-contiguous)에는 자동으로 데이터를 복사해서라도 원하는 shape을 만들어줍니다. 그래서 위의 전치된 텐서에 `reshape(4, 3)`을 하면 내부적으로 필요하면 복사해서 항상 성공하지만, 언제 복사가 일어나는지는 겉으로 잘 드러나지 않습니다. 메모리 공유 여부를 명확히 통제하고 싶을 때는 `view` + `.contiguous()`를 명시적으로 쓰고, 편하게 shape만 바꾸고 싶을 때는 `reshape`을 쓰는 것이 실무 기준입니다.
 
-**`flatten`**: 사실상 `reshape`의 특수 케이스로, "여러 차원을 하나로 합치기"만 할 수 있고 `view`/`reshape`처럼 임의의 shape 재배열은 못 합니다. 대신 12절에서 다룬 대로 `start_dim`으로 batch 차원을 안전하게 보존하는 것이 기본 동작이라, CNN → Linear 연결처럼 목적이 명확한 상황에서 가장 읽기 쉽습니다.
-```python
-x.flatten(start_dim=1)         # (32, 2352)
-x.reshape(32, -1)              # 동일한 결과, -1은 "나머지를 자동 계산"
-```
+**`flatten`**: 사실상 `reshape`의 특수 케이스로, "여러 차원을 하나로 합치기"만 할 수 있고 `view`/`reshape`처럼 임의의 shape 재배열은 못 합니다. 대신 12절에서 다룬 대로 `start_dim`으로 batch 차원을 안전하게 보존하는 것이 기본 동작이라, CNN → Linear 연결처럼 목적이 명확한 상황에서 가장 읽기 쉽습니다. `x.flatten(start_dim=1)`과 `x.reshape(32, -1)`은 같은 결과를 내며(`-1`은 "나머지 차원 크기를 자동 계산"), 전자가 의도를 더 분명히 드러냅니다.
 
 **언제 뭘 쓰나**: shape을 자유롭게 재배열해야 하면 `reshape`(안전), 성능이 중요하고 연속성이 확실하면 `view`. 다차원을 벡터로 펼치기만 하면 `flatten` 또는 `nn.Flatten()`. `view`가 연속성 에러로 실패하면 `.contiguous().view(...)` 또는 그냥 `reshape(...)`으로 바꾸면 해결됩니다.
 
@@ -324,13 +229,7 @@ x.reshape(32, -1)              # 동일한 결과, -1은 "나머지를 자동 �
 
 ## 14. ReLU (Rectified Linear Unit)
 
-ReLU는 딥러닝에서 가장 널리 쓰이는 비선형 활성화함수로, 입력이 0보다 크면 그대로 통과시키고 0 이하면 전부 0으로 만드는 단순한 함수입니다. 그래프로 보면 음수 구간은 완전히 평평한 0, 양수 구간은 기울기 1인 직선입니다.
-
-```python
-nn.ReLU()
-# 또는 함수형으로
-torch.relu(x)
-```
+ReLU는 딥러닝에서 가장 널리 쓰이는 비선형 활성화함수로, 입력이 0보다 크면 그대로 통과시키고 0 이하면 전부 0으로 만드는 단순한 함수입니다. 그래프로 보면 음수 구간은 완전히 평평한 0, 양수 구간은 기울기 1인 직선입니다. 레이어로 쓸 때는 `nn.ReLU()`, 함수형으로 쓸 때는 `torch.relu(x)`입니다.
 
 **사용하는 이유**: 11절에서 다룬 대로 `nn.Linear`만 계속 쌓으면 아무리 층을 늘려도 결국 하나의 선형 변환과 수학적으로 동일해집니다. 층과 층 사이에 ReLU 같은 비선형 함수를 끼워 넣어야만 "선형 변환 → 비선형 변환"이 반복되면서 곡선 형태의 복잡한 함수를 표현할 수 있습니다. 9절에서 언급된 계단함수와 달리 미분 가능(x=0 지점만 예외)해서 gradient 기반 학습을 적용할 수 있고, 계산도 `max(0, x)` 하나뿐이라 지수 연산이 필요한 Sigmoid/Tanh보다 빠릅니다.
 
@@ -360,26 +259,13 @@ loss = loss_fn(logits, targets)  # targets: 0.0/1.0 float, shape 동일
 
 **주의할 점**: 모델 마지막 레이어에 `nn.Sigmoid()`를 직접 붙이면 안 됩니다 — loss 함수 안에 이미 포함되어 있어서, 붙이면 Sigmoid가 두 번 적용되는 셈이 됩니다. 확률 값 자체가 필요한 추론 시점에만 별도로 `torch.sigmoid(logits)`를 호출합니다.
 
-**추론(inference) 파이프라인**: 학습 시에는 loss 함수가 Sigmoid를 내부적으로 포함하므로 모델은 raw logit만 출력하지만, 추론 시에는 loss 계산이 필요 없고 사람이 보거나 판정에 쓸 확률/label이 필요하므로 명시적으로 Sigmoid를 적용합니다.
-
-```python
-model.eval()
-with torch.no_grad():
-    logits = model(x)                    # raw score, shape (batch, 1)
-    probs = torch.sigmoid(logits)        # 0~1 확률로 변환
-    labels = (probs > 0.5).long()        # threshold로 0/1 label 결정
-```
+**추론(inference) 파이프라인**: 학습 시에는 loss 함수가 Sigmoid를 내부적으로 포함하므로 모델은 raw logit만 출력하지만, 추론 시에는 loss 계산이 필요 없고 사람이 보거나 판정에 쓸 확률/label이 필요하므로 명시적으로 Sigmoid를 적용합니다. `model.eval()`과 추론 모드(50절 참고) 안에서 `logits = model(x)` → `probs = torch.sigmoid(logits)`로 0~1 확률로 바꾸고, `(probs > 0.5)`로 0/1 label을 결정합니다.
 
 threshold는 0.5가 기본이지만, 클래스 불균형이 심하거나(사기 탐지, 스팸 필터 등) recall/precision 트레이드오프가 중요하면 0.3, 0.7 같은 값으로 튜닝하는 경우가 많습니다. 참고로 `sigmoid(x) > 0.5`는 수학적으로 `x > 0`과 같기 때문에, threshold가 0.5로 고정이라면 Sigmoid 없이 `logits > 0`으로 바로 label만 뽑아도 결과는 같습니다. 다만 실제 확률값(신뢰도 점수, ROC-AUC 계산 등)이 필요하면 결국 Sigmoid를 거쳐야 합니다.
 
 ## 16. Softmax, CrossEntropyLoss, argmax
 
-Softmax는 여러 개의 raw score(logit)를 받아서 총합이 1인 확률 분포로 바꿔주는 함수로, 다중분류(클래스가 3개 이상)에서 Sigmoid의 역할을 합니다. 각 클래스의 logit을 지수함수에 넣고 전체 합으로 나눠서 정규화하며, 결과는 모든 값이 0~1 사이이고 전체 합이 정확히 1이며, logit이 클수록 지수함수 특성상 확률도 비대칭적으로 더 커집니다(가장 큰 logit이 확률도 압도적으로 커지는 경향).
-
-```python
-logits = torch.tensor([2.0, 1.0, 0.1])   # 클래스 3개짜리 raw score
-probs = torch.softmax(logits, dim=-1)     # tensor([0.659, 0.242, 0.099]) — 합 1.0
-```
+Softmax는 여러 개의 raw score(logit)를 받아서 총합이 1인 확률 분포로 바꿔주는 함수로, 다중분류(클래스가 3개 이상)에서 Sigmoid의 역할을 합니다. 각 클래스의 logit을 지수함수에 넣고 전체 합으로 나눠서 정규화하며, 결과는 모든 값이 0~1 사이이고 전체 합이 정확히 1이며, logit이 클수록 지수함수 특성상 확률도 비대칭적으로 더 커집니다(가장 큰 logit이 확률도 압도적으로 커지는 경향). 예를 들어 `[2.0, 1.0, 0.1]` 세 logit에 `torch.softmax(..., dim=-1)`을 적용하면 대략 `[0.66, 0.24, 0.10]`처럼 합이 1인 분포가 나옵니다.
 
 **왜 `dim`을 지정해야 하나 — Sigmoid와의 차이**: Sigmoid는 각 원소가 자기 자신의 값에만 의존하는 완전한 원소별(element-wise) 연산이라 축(axis) 개념 자체가 없습니다. 반면 Softmax는 분모에 같은 그룹 원소들의 합(`Σ`)이 들어가기 때문에, 어떤 원소 하나의 결과를 구하려면 "같은 그룹에 속한 다른 원소들과 합해서 나눠야" 합니다. 그래서 "어느 축을 하나의 그룹으로 볼 것인가"를 `dim`으로 반드시 지정해야 합니다. `dim=-1`은 마지막 차원(클래스 차원)을 기준으로 정규화하라는 뜻이고, `(batch, num_classes)` shape에서 배치별로 각각 정규화되도록 항상 `dim=-1`을 씁니다. 실수로 `dim=0`을 넘기면 배치 방향으로 정규화되어버려서 클래스 확률로서 의미 없는 값이 나옵니다.
 
@@ -404,22 +290,9 @@ loss = loss_fn(logits, targets)
 
 targets를 원-핫 벡터로 넣는 실수를 자주 하는데, `CrossEntropyLoss`는 원-핫이 아니라 정수 인덱스(0, 1, 2, ...)를 그대로 받습니다. 여기서 shape/dtype 실수가 제일 많이 납니다. 마지막에 `nn.Softmax()`를 직접 붙이면 안 되는 것도 `BCEWithLogitsLoss`에서 Sigmoid를 따로 안 붙이는 것과 똑같은 이유입니다.
 
-**argmax**: 텐서에서 가장 큰 값의 인덱스를 반환하는 함수로, 값 자체가 아니라 "몇 번째 위치에 있었는가"를 돌려줍니다.
+**argmax**: 텐서에서 가장 큰 값의 인덱스를 반환하는 함수로, 값 자체가 아니라 "몇 번째 위치에 있었는가"를 돌려줍니다. 예를 들어 `[0.1, 0.7, 0.2]`에 `torch.argmax`를 하면 가장 큰 0.7이 인덱스 1에 있으므로 `1`을 반환합니다.
 
-```python
-probs = torch.tensor([0.1, 0.7, 0.2])
-torch.argmax(probs)          # tensor(1)  -- 0.7이 인덱스 1에 있으므로
-```
-
-**추론 파이프라인**: 이진분류와 같은 패턴으로, 학습에는 활성화함수를 loss 안에 숨기고 추론에서만 명시적으로 적용합니다.
-
-```python
-model.eval()
-with torch.no_grad():
-    logits = model(x)                          # (batch, num_classes)
-    probs = torch.softmax(logits, dim=-1)       # 확률 분포로 변환
-    preds = torch.argmax(probs, dim=-1)         # 확률이 가장 큰 클래스 인덱스 = 예측 label
-```
+**추론 파이프라인**: 이진분류와 같은 패턴으로, 학습에는 활성화함수를 loss 안에 숨기고 추론에서만 명시적으로 적용합니다. `model.eval()`과 추론 모드(50절 참고) 안에서 `logits = model(x)` → `probs = torch.softmax(logits, dim=-1)` → `preds = torch.argmax(probs, dim=-1)` 순으로, 확률 분포로 변환한 뒤 가장 큰 클래스 인덱스를 예측 label로 뽑습니다.
 
 Softmax는 순서를 보존하는 단조증가 함수라서, "어떤 클래스의 확률이 가장 큰가"는 Softmax를 적용하기 전 logit에서 봐도 결과가 같습니다. 즉 `torch.argmax(logits, dim=-1)`과 `torch.argmax(probs, dim=-1)`은 항상 동일한 결과를 냅니다. 그래서 label만 필요하면 Softmax 없이 logit에서 바로 argmax를 뽑아도 되고, 확률 수치(신뢰도, top-k 확률 등)가 필요할 때만 Softmax를 거치면 됩니다.
 
@@ -838,3 +711,154 @@ train_dataset, val_dataset, test_dataset = random_split(
 ## 45. 데이터 파이프라인 디버깅 체크리스트
 
 데이터 파이프라인에서 겪는 흔한 증상과 의심해볼 원인을 짝지어두면 문제를 빠르게 좁혀갈 수 있습니다. loss가 처음부터 NaN이면 Normalize 값 오류, learning rate 과다, 라벨의 결측/이상값을 의심합니다. loss는 줄어드는데 val acc가 안 오르면 train/val 라벨 매칭 오류, 데이터 누수(val이 train과 겹침), val에 augmentation이 잘못 들어간 경우를 의심합니다. 특정 클래스만 계속 틀리면 클래스 불균형이나 split 시 그 클래스가 한쪽에 몰린 것을 의심합니다. 배치마다 shape 에러가 나면 transform에 Resize/CenterCrop이 빠졌거나 흑백/RGB 이미지가 섞여 있는 것을 의심합니다. 매 실행마다 결과가 달라지고 재현이 안 되면 split 시드 미고정을 의심합니다(shuffle 자체는 문제가 아니지만, `random_split`/`train_test_split`의 시드를 안 고정한 경우). 학습은 잘 되는데 실제 서비스에서 성능이 낮으면 배포 시 전처리(mean/std, resize)가 학습 때와 다른 것을 의심합니다.
+
+## 46. 학습 파이프라인의 randomness와 seed
+
+딥러닝 학습은 본질적으로 확률적(stochastic)입니다. 무작위성이 있어야 학습이 되는 부분도 있고, 단지 편의상 무작위인 부분도 있는데, MLP 파이프라인을 순서대로 따라가면 난수가 쓰이는 지점이 여러 곳입니다. 데이터를 train/val로 나누는 `random_split`에서 어떤 샘플이 어느 쪽에 들어갈지, `nn.Linear`의 weight/bias 초기화(기본값은 Kaiming uniform)에서 학습 시작점이 어디일지, DataLoader의 `shuffle=True`가 매 epoch 배치를 어떤 순서로 구성할지, `RandomCrop`·`RandomHorizontalFlip` 같은 데이터 증강이 매 스텝 입력을 어떻게 변형할지, Dropout이 매 forward마다 어떤 뉴런을 끌지가 모두 난수로 정해집니다. 여기에 `num_workers>0`이면 워커별 난수 상태가 따로 돌고, GPU에서는 일부 CUDA 커널의 비결정적 atomic 연산이나 cuDNN의 알고리즘 자동 선택 때문에 같은 시드라도 결과가 미세하게 갈릴 수 있습니다. 결국 같은 코드를 두 번 돌려도 loss 곡선과 최종 정확도가 다르게 나옵니다. 이 변동성 자체가 문제라기보다, 실험을 비교할 때 방해가 된다는 점이 핵심입니다.
+
+그래서 seed를 고정합니다. 이유는 세 가지입니다. 재현성 — 논문이나 과제 결과를 남이 똑같이 돌려볼 수 있어야 합니다. 디버깅 — "이번엔 왜 터졌지"를 추적하려면 실행이 결정적이어야 합니다. 공정한 비교 — 학습률 0.01과 0.001을 비교할 때 초기화와 배치 순서가 매번 다르면, 성능 차이가 하이퍼파라미터 때문인지 운 때문인지 알 수 없습니다. 시드를 같게 두면 "다른 조건은 동일"이 성립합니다. seed는 난수 생성기(PRNG)의 시작 상태를 지정하는 값이고, PRNG는 결정적 알고리즘이라 시작 상태가 같으면 이후 난수 시퀀스가 완전히 똑같이 재생됩니다.
+
+PyTorch에서 시드를 고정하는 기본 형태는 다음과 같습니다.
+
+```python
+import random, numpy as np, torch
+
+def set_seed(seed: int = 42):
+    random.seed(seed)                 # 파이썬 기본 random
+    np.random.seed(seed)              # numpy (전처리에서 자주 씀)
+    torch.manual_seed(seed)           # CPU 텐서 연산, 초기화
+    torch.cuda.manual_seed_all(seed)  # 모든 GPU
+```
+
+DataLoader는 별도로 챙겨야 완전해집니다. `generator`로 셔플 난수를 고정하고, 워커 프로세스가 각자 난수를 다시 시드하도록 `worker_init_fn`을 넘깁니다.
+
+```python
+g = torch.Generator()
+g.manual_seed(seed)
+
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+loader = DataLoader(dataset, batch_size=64, shuffle=True,
+                    num_workers=4, worker_init_fn=seed_worker, generator=g)
+```
+
+43절의 `random_split`도 `generator=torch.Generator().manual_seed(seed)`를 넘겨서 분할을 고정합니다.
+
+여기까지 해도 GPU 연산은 여전히 완전히 결정적이지 않습니다. 끝까지 결정적으로 만들려면 `torch.use_deterministic_algorithms(True)`, `torch.backends.cudnn.deterministic = True`, `torch.backends.cudnn.benchmark = False`를 설정하고 필요하면 `CUBLAS_WORKSPACE_CONFIG=:4096:8` 환경변수를 줍니다. 다만 이 모드는 학습 속도를 떨어뜨리므로 최종 실험이나 디버깅 때만 켜는 경우가 많습니다.
+
+주의할 점이 몇 가지 있습니다. 시드 고정이 완벽한 재현을 보장하지는 않습니다 — PyTorch·CUDA·cuDNN 버전, GPU 모델, CPU와 GPU 여부가 다르면 결과가 갈릴 수 있어서, 재현성은 "같은 환경 + 같은 시드"라는 조건부입니다. 또 단일 시드 결과를 과신하면 안 됩니다. 시드 하나로 낸 정확도는 그 시드의 운을 포함하므로, 모델이나 방법을 비교할 때는 시드를 3~5개로 돌려서 평균과 표준편차로 보고하는 것이 올바릅니다. 시드 고정은 "재현"을 위한 것이고, 성능 평가는 "여러 시드의 분포"로 해야 합니다. `set_seed()`는 스크립트 맨 앞, 모델과 DataLoader를 만들기 전에 한 번만 부릅니다. 중간에 다시 부르면 난수 시퀀스가 꼬여 의도와 달라집니다. 마지막으로, 어떤 시드로 낸 결과인지 로그에 남겨야 나중에 재현할 수 있습니다.
+
+## 47. 학습 로그(logging) 설계
+
+logging은 "학습이 지금 잘 되고 있는지 판단"하는 목적과 "나중에 실험을 재현·비교"하는 목적을 동시에 만족해야 합니다. 이 관점에서 무엇을, 언제, 어디에, 어떤 구조로 남길지를 설계합니다.
+
+무엇을 남기느냐부터 봅니다. 설정(config)으로 seed, learning rate, batch size, optimizer, 모델 구조, 데이터셋 버전을 남깁니다 — 재현과 비교의 기준이 됩니다. 학습 지표로 train loss(필요하면 train accuracy)를 남겨 수렴 여부와 과적합 시작점을 봅니다. 검증 지표로 val loss와 val accuracy/F1 등을 남겨 일반화 성능과 early stopping·모델 선택 근거로 씁니다. 최적화 상태로 learning rate(스케줄러를 쓴다면)와 gradient norm을 남겨 LR 스케줄 확인과 gradient explosion/vanishing 진단에 씁니다. 선택적으로 weight·activation의 평균·표준편차·히스토그램을 남기면 초기화나 정규화 문제를 진단할 수 있습니다. 자원 측면에서 epoch 소요 시간, GPU 메모리, throughput을 남기면 병목을 파악할 수 있고, 산출물로 checkpoint 경로와 best metric, 최종 결과를 남깁니다. 가장 중요한 원칙은 train과 val을 항상 쌍으로 남기는 것입니다. 둘의 간격이 과적합 신호이기 때문입니다.
+
+언제 남기느냐는 세 단위로 나뉩니다. step(iteration) 단위로는 train loss를 남기되, 매 스텝 찍으면 노이즈가 크므로 보통 N 스텝마다(예: 50) 찍거나 구간 평균을 찍습니다. epoch 단위로는 val 지표, epoch 평균 train loss, learning rate, 소요 시간을 남기고, 사람이 읽는 요약 로그는 여기서 만듭니다. best 갱신 시점에는 val 지표가 개선될 때만 checkpoint를 저장하면서 "new best" 로그를 남깁니다. 콘솔에는 epoch 요약만 깔끔하게, 파일과 트래커에는 step 단위 세부까지 — 두 채널을 분리하는 것이 좋습니다.
+
+어디에 남기느냐는 여러 sink를 조합합니다. 콘솔(stdout)은 사람이 실시간으로 보는 요약이며 `print`가 아니라 `logging` 모듈을 씁니다. 파일 로그(`train.log`)는 콘솔과 같은 내용에 타임스탬프를 붙여 저장합니다. 구조화 지표 파일(`metrics.csv` 또는 `metrics.jsonl`)은 나중에 스크립트로 후처리하거나 plot을 그리기 위한 것입니다. 실험 트래커로는 로컬에서 가벼운 TensorBoard, 팀 단위로 여러 실험을 비교한다면 W&B나 MLflow를 씁니다. config 스냅샷(`config.yaml`/`hparams.json`)은 실행 시점의 설정을 그대로 덤프합니다. checkpoint는 `ckpt/best.pt`와 `ckpt/last.pt`로 둡니다. 학습용 소규모 프로젝트라면 `logging` 모듈 + CSV + TensorBoard 조합이면 충분합니다.
+
+실험마다 폴더 하나로 격리하고, 폴더 이름에 타임스탬프와 핵심 하이퍼파라미터를 넣습니다.
+
+```
+runs/
+  2026-08-27_lr0.01_bs64_seed42/
+    config.json
+    train.log
+    metrics.csv
+    tb/
+    best.pt
+    last.pt
+```
+
+이렇게 하면 나중에 여러 run의 `metrics.csv`를 모아 비교 plot을 그리기 쉽습니다.
+
+흔한 실수들이 있습니다. train loss만 로깅하면 과적합을 못 봅니다 — val을 반드시 같이 남깁니다. step 단위 raw loss만 남기면 노이즈에 묻히므로 이동평균이나 주기적 로깅을 씁니다. config를 안 남기면 두 달 뒤 "이 결과가 어떤 learning rate였지"를 알 수 없고, 코드 수정으로 기본값이 바뀌면 과거 로그 해석이 불가능해지므로 실행 시점에 덤프해야 합니다. git commit hash를 안 남기면 코드가 바뀐 뒤 재현이 불가능하므로 `git rev-parse HEAD`를 찍어두면 좋습니다. `print`는 타임스탬프·레벨·파일 저장이 안 되므로 `logging` 모듈을 씁니다. 매 스텝 히스토그램을 남기면 느리고 로그가 비대해지므로 epoch 단위로 하거나 생략합니다. 여러 프로세스로 분산 학습(DDP)할 때는 rank 0에서만 파일과 트래커에 쓰도록 가드합니다. checkpoint를 매 epoch 무조건 저장하면 디스크가 폭발하므로 `best.pt`와 `last.pt` 두 개만 굴리는 것이 보통입니다.
+
+## 48. state_dict와 checkpoint
+
+`state_dict`는 PyTorch에서 학습 가능한 상태를 담은 파이썬 딕셔너리로, 텐서 자체가 아니라 "이름 → 텐서" 매핑입니다. 모델의 `state_dict`는 각 레이어의 파라미터(weight, bias)와 버퍼(buffer)를 담습니다. 예를 들어 `Linear(784, 256)` → `ReLU` → `BatchNorm1d(256)` → `Linear(256, 10)` 구조의 `state_dict`를 순회하면 다음과 같은 키가 나옵니다.
+
+| 키 | shape | 종류 |
+|---|---|---|
+| `0.weight` / `0.bias` | `(256, 784)` / `(256,)` | 파라미터 |
+| `2.weight` / `2.bias` | `(256,)` / `(256,)` | 파라미터 (BN gamma / beta) |
+| `2.running_mean` / `2.running_var` | `(256,)` / `(256,)` | 버퍼 |
+| `2.num_batches_tracked` | `()` | 버퍼 |
+| `4.weight` / `4.bias` | `(10, 256)` / `(10,)` | 파라미터 |
+
+키 앞의 숫자는 `Sequential` 안에서의 레이어 인덱스입니다(`ReLU`는 파라미터가 없어 빠짐).
+
+여기서 파라미터(`nn.Parameter`, `requires_grad=True`)는 optimizer가 업데이트하는 대상이고 `model.parameters()`로 순회합니다. 버퍼(`register_buffer`로 등록)는 gradient는 없지만 모델 상태의 일부이며, BatchNorm의 running stats가 대표적입니다. 버퍼도 `state_dict`에 포함되므로 저장·로드할 때 같이 따라가는데, 이게 중요한 이유는 버퍼를 빠뜨리면 추론 시 BN 통계가 초기화되어 성능이 망가지기 때문입니다. 키 이름은 모듈 계층 구조를 점(`.`)으로 연결한 것입니다.
+
+optimizer도 `state_dict`를 가집니다. Adam이라면 각 파라미터의 1차 모멘트(`exp_avg`), 2차 모멘트(`exp_avg_sq`), step 카운터가 여기 들어 있고, SGD-momentum이라면 velocity가 들어 있습니다. 학습을 중단했다가 정확히 이어서 하려면 이걸 반드시 저장해야 합니다. 안 그러면 모멘텀이 0부터 다시 쌓여 loss가 튑니다.
+
+모델을 저장할 때는 객체를 통째로 저장하는 방법(`torch.save(model, ...)`)과 `state_dict`만 저장하는 방법(`torch.save(model.state_dict(), ...)`)이 있는데, 후자가 권장됩니다. 객체 통째 저장은 pickle이 클래스 정의 위치(모듈 경로)에 의존해서, 파일을 옮기거나 코드를 리팩터링하면 로드가 깨집니다. `state_dict`는 순수한 텐서 딕셔너리라 이식성이 좋고, 로드할 때는 모델을 먼저 코드로 만든 뒤 파라미터만 부어넣습니다.
+
+checkpoint는 "학습의 특정 시점을 통째로 저장한 것"입니다. `state_dict`가 재료라면 checkpoint는 그 재료들을 모은 딕셔너리로, 학습 재개와 모델 선택에 필요한 모든 것을 담습니다. 무엇을 담느냐는 목적에 따라 다릅니다. 추론·배포만 할 거면 `model.state_dict()`(와 config)만 있으면 됩니다. 학습을 정확히 이어서 할 거면 model, optimizer, scheduler, scaler(AMP를 쓴다면), epoch/step, RNG state가 필요합니다. 실험 관리까지 하려면 여기에 best metric, config, git hash를 더합니다.
+
+best와 last를 나눠 굴리는 것이 보통입니다. `last.pt`는 매 epoch 덮어쓰며 학습이 크래시했을 때 재개하기 위한 것이라, optimizer·scheduler·RNG를 포함한 full checkpoint입니다. `best.pt`는 val 지표가 개선될 때만 저장하며, 성능이 가장 좋았던 순간의 모델입니다 — 마지막 epoch이 항상 최고는 아니기 때문에(과적합) 따로 관리하고, 보통 `model.state_dict()`와 metric, config만 담아 가볍게 만듭니다.
+
+자주 겪는 문제들이 있습니다. `Missing key(s)`/`Unexpected key(s)` 에러는 모델 구조가 저장 시점과 달라진 것으로, 레이어를 추가·제거했거나 이름이 바뀐 경우입니다 — 부분 로드는 `model.load_state_dict(sd, strict=False)`로 합니다. `DataParallel`/DDP로 래핑한 모델을 저장하면 키에 `module.` 접두사가 붙으므로, 저장할 때 `model.module.state_dict()`를 쓰거나 로드할 때 접두사를 벗깁니다. BatchNorm 성능이 저하되면 버퍼(running stats)를 안 담았거나 로드 후 `model.eval()`을 안 부른 것입니다. device가 안 맞으면 `torch.load(..., map_location=...)`으로 지정합니다 — GPU에서 저장한 걸 CPU에서 열 때 특히 필요합니다. 최신 PyTorch는 `torch.load(..., weights_only=True)`가 기본이자 권장인데(임의 코드 실행 방지), config에 커스텀 객체가 있으면 안전한 타입만 쓰거나 `weights_only=False`를 명시해야 합니다. optimizer state를 빠뜨리면 재개 후 loss가 튀고, RNG state를 빠뜨리면 재개 후 데이터 셔플 순서가 달라져 엄밀한 재현이 안 됩니다.
+
+## 49. 모델 불러오기 vs 학습 재개
+
+둘 다 `torch.load`로 파일을 여는 건 같지만, 목적과 복원 범위가 다릅니다. 모델 불러오기는 추론·평가를 하거나 새 학습의 출발점(전이학습·파인튜닝)으로 삼는 경우이고, `model.state_dict()`만 복원하면 됩니다. 필요한 파일은 가벼운 weight 파일(`best.pt`)이고, optimizer는 새로 만들며(모멘텀 0에서 시작), 시작 epoch은 0(또는 새 스케줄), learning rate 스케줄도 새로 시작합니다. 데이터 순서는 상관없거나 새 시드를 씁니다. 결과적으로 원본과는 다른 학습 궤적이 나오는데, 이건 의도된 것입니다.
+
+학습 재개는 중단된 그 학습을 끊김 없이 그대로 계속하는 경우입니다. 서버가 죽었거나, 시간 제한에 걸렸거나, 이어서 더 돌리고 싶을 때입니다. model, optimizer, scheduler, scaler, epoch/step, best metric, RNG state를 모두 복원해야 하고, 필요한 파일은 full checkpoint(`last.pt`)입니다. optimizer는 저장된 상태를 복원해 모멘텀을 유지하고, 시작 epoch은 저장된 값 + 1, learning rate 스케줄도 저장된 시점부터 이어집니다. RNG를 복원하면 데이터 순서도 원래대로 이어집니다. 결과는 중단 없이 처음부터 돌린 것과 (거의) 동일해야 합니다.
+
+optimizer 복원이 왜 결정적인지 봅니다. Adam은 각 파라미터마다 `exp_avg`(1차 모멘트), `exp_avg_sq`(2차 모멘트), step 카운터를 누적하고, 실효 learning rate는 이 누적값에 따라 조정됩니다. optimizer를 새로 만들고 재개하면 이 누적값이 0에서 다시 시작하므로, 첫 스텝들의 업데이트 크기가 왜곡되어 loss가 눈에 띄게 튀었다가 회복합니다. 짧은 학습이면 최종 성능에까지 영향이 갑니다. SGD + momentum도 마찬가지로 velocity가 날아갑니다. 그래서 "이어서 학습"이 목적이면 optimizer state는 필수이고, "새 학습"이 목적이면 버리는 게 맞습니다.
+
+scheduler와 epoch 복원도 필요합니다. Cosine이나 StepLR 같은 스케줄러는 내부에 `last_epoch` 카운터가 있어서, 복원하지 않으면 learning rate가 초기값으로 돌아가 스케줄이 어긋납니다 — `scheduler.load_state_dict`를 쓰거나 생성 시 `last_epoch=start_epoch-1`을 줍니다. start_epoch을 복원하지 않고 0부터 돌리면 이미 학습한 데이터를 또 학습하고 총 epoch 수가 늘어납니다. global_step을 복원하지 않으면 로깅 x축이 어긋나 그래프가 겹칩니다.
+
+판단 기준은 간단합니다. 지금 이 실험을 중단 없이 계속하는 게 목표면 학습 재개(full checkpoint, `last.pt`)입니다. 학습된 가중치를 재료로 써서 다른 걸 하는 거면(추론, 평가, 파인튜닝, 다른 데이터) 모델 불러오기(`best.pt`의 model만)입니다. 한 문장으로, 모델 불러오기는 "값"을 가져오는 것이고 학습 재개는 "진행 상태"를 복원하는 것입니다.
+
+## 50. 평가·추론에서의 eval()과 inference_mode()
+
+31절에서 `model.train()`/`model.eval()`/`torch.no_grad()`의 구분을 다뤘는데, 추론 시에는 왜 모델 상태만 복원하면 되고 `eval()`과 `inference_mode()`를 둘 다 써야 하는지를 이어서 정리합니다. 세 가지가 서로 다른 층위의 문제입니다.
+
+먼저 왜 모델 상태만 복원하면 되는가. 추론에서는 파라미터 업데이트가 일어나지 않으므로 optimizer, scheduler, epoch, RNG 같은 학습 재개용 상태가 전부 불필요하고, `model.state_dict()`(파라미터 + 버퍼)만 있으면 됩니다. 그래서 배포·평가용 체크포인트(`best.pt`)는 가볍게 만듭니다.
+
+다음으로 `model.eval()`을 쓰는 이유. `eval()`은 모델의 모든 서브모듈에 `self.training = False`를 재귀적으로 설정하고, 일부 레이어는 train과 eval에서 동작이 다릅니다. Dropout은 train에서 뉴런을 확률 p로 끄고 나머지를 `1/(1-p)`배 스케일하지만(inverted dropout), eval에서는 아무것도 끄지 않고 전체 뉴런을 씁니다. `eval()`을 안 하면 추론인데도 뉴런이 무작위로 꺼져서 같은 입력에 매번 다른 출력이 나오고 성능이 떨어집니다. BatchNorm은 train에서 현재 미니배치의 평균·분산으로 정규화하면서 그 통계로 `running_mean`/`running_var`를 업데이트하지만, eval에서는 학습 중 누적한 고정값으로 정규화하고 통계를 업데이트하지 않습니다. `eval()`을 안 하면 배치의 통계를 쓰므로 배치 크기와 배치 구성에 따라 출력이 달라지고, 특히 batch size가 1이면 분산이 0이라 계산이 망가지며, 추론 데이터로 running stats가 오염됩니다. 중요한 점은 `eval()`이 autograd와는 무관하다는 것입니다 — `eval()`만 해도 gradient는 여전히 계산되고 그래프도 쌓입니다.
+
+마지막으로 `torch.inference_mode()`(또는 `no_grad()`). 기본적으로 PyTorch는 모든 연산에서 autograd 그래프를 만들어 중간 텐서를 붙잡아 두는데, 추론에서는 backward를 안 하므로 전부 낭비입니다. `inference_mode()` 블록 안에서는 그래프를 안 만들어 중간 activation을 안 붙잡으므로 메모리를 크게 절약하고(큰 모델·큰 배치에서 체감), autograd 부기를 생략해 연산이 빠르며, 실수로 gradient가 계산될 일도 없습니다.
+
+```python
+model.eval()
+with torch.inference_mode():
+    logits = model(x)
+    preds = logits.argmax(dim=1)
+```
+
+27절에서 다룬 `no_grad()`와의 차이는, `no_grad()`가 그래프 추적만 끄는 반면 `inference_mode()`는 거기에 더해 version counter, view 추적 같은 부기까지 전부 끈다는 점입니다. 더 공격적으로 최적화되지만, 이 블록에서 만든 텐서는 나중에 autograd 계산에 다시 넣을 수 없습니다. 순수 추론이면 `inference_mode()`가 낫고, 추론 결과 텐서를 이후에 gradient가 필요한 연산(적대적 예제 생성, 일부 메타러닝)에 써야 하면 `no_grad()`를 씁니다. `eval()`과 `inference_mode()`는 각각 "모듈 동작 모드"와 "autograd 동작"을 제어하는 직교(orthogonal)한 스위치라서 서로를 대체하지 않으며, 추론할 때는 둘 다 필요합니다.
+
+## 51. 학습곡선(train/val loss) 읽기
+
+5절 그룹에서 다룬 "학습곡선"은 x축이 데이터 크기인 learning curve였는데, 여기서는 x축이 epoch인 train/val loss 곡선을 말합니다. 학습 로그의 숫자만 봐서는 지금 상태를 판단하기 어렵고, 두 곡선을 같은 그래프에 겹쳐 그리면 일반화 상태(과적합/과소적합/적정), 언제 멈춰야 하는지(val loss가 최소가 되는 지점), 용량·정규화·learning rate를 어느 방향으로 튜닝해야 하는지, 코드 버그가 있는지(loss가 안 내려감, NaN, val이 train보다 한참 낮음), 여러 실험 중 어느 설정이 더 낫고 안정적인지를 한눈에 볼 수 있습니다.
+
+곡선을 읽을 때는 세 가지 축을 봅니다. 첫째, 두 곡선 사이의 간격(gap)입니다 — train과 val의 차이가 일반화 갭이고, 크면 과적합입니다. 둘째, 각 곡선의 추세와 모양입니다 — 아직 내려가는 중인지, 평평해졌는지(plateau), 다시 올라가는지(U자). 셋째, val 곡선의 최저점 위치입니다 — 최저점이 마지막 epoch이면 더 학습할 여지가 있고, 최저점이 중간이고 이후 상승이면 그 지점에서 멈췄어야 합니다(early stopping).
+
+대표 패턴은 이렇습니다. 적정 학습이면 train이 꾸준히 감소하다 수렴하고 val이 train을 따라 감소하며 갭이 작습니다. 과적합이면 train은 계속 감소해 0에 근접하는데 val이 어느 시점부터 정체하다 다시 상승합니다(U자) — 대응은 early stopping, 규제 강화(weight decay, dropout), 데이터 증강, 모델 축소입니다. 과소적합이면 train이 높은 값에서 정체하고 val도 비슷하게 높게 정체합니다 — 대응은 모델 용량 증가, 더 오래 학습, learning rate 조정, feature 점검입니다. 둘 다 아직 내려가는 중이면 그냥 덜 돌린 것이니 epoch을 늘립니다. train이 요동치거나 발산하거나 NaN이 뜨면 learning rate가 너무 큰 것이니 낮추고 gradient clipping이나 warmup을 씁니다. 반대로 매우 느리게 조금씩만 감소하면 learning rate가 너무 작은 것입니다. val이 train보다 꾸준히 낮으면 대개 정상이 아니고 누수나 설정 차이를 의심합니다. val이 큰 진폭으로 출렁이면 val set이 작거나 batchnorm·규제의 영향이니 val set을 키우거나 곡선을 스무딩합니다. 특정 epoch에 train과 val이 함께 뚝 떨어지면 learning rate 스케줄러가 LR을 낮춘 시점이며 정상입니다.
+
+"val loss가 train loss보다 낮은" 현상은 의외로 흔하고 원인이 여러 가지입니다. train은 dropout을 켠 상태로 측정하고 val은 `eval()`로 끈 상태로 측정하므로 val이 유리해서 낮게 나올 수 있는데, 경미하면 정상입니다. train loss는 그 epoch 동안 파라미터가 계속 바뀌며 누적 평균낸 값이고 val은 epoch 끝의 고정 모델로 측정하므로 train이 불리한데, 이것도 정상입니다. val set이 우연히 train보다 쉬우면 분할이 편향된 것이니 split을 재확인합니다. 정규화 통계를 전체 데이터로 계산했거나 train 샘플이 val에 섞였거나 중복 샘플이 있으면 데이터 누수이고, 이건 반드시 고쳐야 합니다 — 갭이 크고 지속적이면 누수를 의심합니다.
+
+실무 팁 몇 가지. 두 곡선은 같은 축, 같은 스케일에 겹쳐 그립니다(따로 그리면 갭이 안 보임). loss가 여러 자릿수로 변하면 y축을 log scale로 합니다. loss만이 아니라 accuracy(또는 실제 관심 지표) 곡선도 같이 봅니다 — loss는 개선되는데 accuracy는 안 오르거나 그 반대인 경우가 있습니다(특히 클래스 불균형). train loss 노이즈가 심하면 이동평균으로 스무딩하되 원본도 흐리게 같이 표시합니다. 최저 val 지점에 마커를 찍고 그 epoch을 기록하면 그게 배포할 체크포인트입니다. 곡선 하나로 결론내지 말고 시드 3~5개의 val 곡선을 겹쳐 평균과 밴드를 보면 성능 차이가 진짜인지 노이즈인지 구분됩니다. x축을 epoch뿐 아니라 wall-clock 시간이나 step으로도 그려보면 효율 비교에 유용합니다.
+
+요약하면, val loss가 아직 내려가는 중이면 더 학습하고, val과 train이 둘 다 평평하고 높으면 과소적합이니 용량·학습량을 늘리고, val loss가 바닥을 치고 올라가면 과적합이니 그 지점에서 멈추고 규제를 강화하고, loss가 튀거나 NaN이면 learning rate를 낮추고 clipping을 겁니다. 두 곡선이 거의 붙어서 낮게 수렴하는 것이 이상적입니다.
+
+## 52. Overfitting과 Underfitting (MLP 학습 관점)
+
+5절 그룹에서 편향-분산 트레이드오프로 다룬 내용을 MLP 학습 파이프라인의 관점에서 다시 정리합니다. 모델의 목표는 학습 데이터를 잘 맞추는 것이 아니라 본 적 없는 데이터에서 잘 작동하는 것(일반화)이고, 이 관점에서 두 가지 실패 유형이 있습니다. Underfitting(과소적합)은 모델이 데이터의 패턴 자체를 충분히 못 배운 상태로, train도 못 맞추고 val도 못 맞춥니다. Overfitting(과적합)은 모델이 train 데이터의 신호(signal)에 더해 잡음(noise)까지 통째로 암기한 상태로, train은 아주 잘 맞추는데 val은 나쁘고 둘 사이 갭이 큽니다. 정리하면 underfitting은 train·val 성능이 둘 다 나쁘고 갭이 작으며, overfitting은 train 성능은 매우 좋지만 val 성능이 나쁘고 갭이 큽니다.
+
+Bias–Variance 관점에서 보면, Bias(편향)는 모델의 표현력 부족에서 오는 구조적 오차로 높으면 underfitting이고(비선형 데이터를 선형 모델로 맞추는 경우), Variance(분산)는 학습 데이터가 조금만 바뀌어도 모델이 크게 흔들리는 정도로 높으면 overfitting입니다(train set의 우연한 패턴에 과민 반응). 전통적으로는 모델 복잡도를 키우면 bias가 줄고 variance가 늘어난다고 보고 그 사이 최적점을 찾는 문제로 봅니다. 딥러닝의 과매개변수 영역에서는 이 그림이 항상 맞지는 않지만, MLP 학습 감각을 잡는 데는 유효합니다.
+
+loss 곡선으로는 51절에서 다룬 대로 식별합니다. Underfitting이면 train loss가 높은 값에서 정체하고 val loss도 비슷하게 높게 정체합니다. 적정이면 train이 낮게 수렴하고 val이 train을 따라 낮게 수렴하며 갭이 작습니다. Overfitting이면 train loss는 계속 감소해 0에 근접하는데 val loss가 어느 시점 이후 정체하다 다시 상승합니다(U자). Overfitting의 전형적 신호는 val loss가 최저점을 찍고 올라가는데 train loss는 계속 내려가는 벌어짐입니다.
+
+Underfitting의 원인은 모델 용량 부족(레이어·뉴런 수가 적음, 비선형성 부족), 너무 짧은 학습, 부적절한 learning rate, 과한 규제(weight decay·dropout 과다), 부실한 feature나 정규화 누락입니다. 대응은 모델 키우기(은닉층·뉴런 추가), 더 오래 학습, learning rate·스케줄 조정, 규제 완화, 입력 정규화와 feature engineering입니다. 진단을 위해 먼저 작은 데이터 배치 하나에 일부러 과적합시켜 보는데, 이게 안 되면 모델이나 학습 코드에 버그가 있는 것입니다.
+
+Overfitting의 원인은 데이터 양에 비해 너무 큰 모델, 너무 오래 한 학습, 적거나 다양성 부족한 데이터, 규제 없음, 데이터 누수입니다. 대응은 효과가 큰 순서로 대략 데이터 늘리기와 데이터 증강(가장 근본적), early stopping(val loss 최저 지점에서 중단), 규제 추가(weight decay·dropout), 모델 축소, Batch Normalization·label smoothing, 앙상블·사전학습 모델 활용, 그리고 누수 점검(정규화 통계는 train으로만 계산, split 중복 제거)입니다.
+
+세 가지 레버가 함께 작용한다는 점을 기억하면 좋습니다. 모델 복잡도는 키우면 overfit 쪽, 줄이면 underfit 쪽으로 갑니다. 학습 시간(epoch)은 오래 하면 overfit 쪽으로 가는데, 그래서 early stopping이 규제처럼 작동합니다. 데이터 양·품질은 많아지면 같은 모델도 overfit이 줄어듭니다. 목표는 train을 완벽히 맞추는 것이 아니라 val 성능이 최고가 되는 지점을 찾는 것입니다. 실무 절차로는, 먼저 작은 부분집합에 과적합시켜 모델·손실·역전파가 정상인지 확인하고(underfit이면 여기서 걸림), 전체 데이터로 학습하며 train/val 곡선을 겹쳐 관찰하고, 갭이 크면 규제·데이터·early stopping으로, 둘 다 나쁘면 용량·학습량·learning rate로 대응합니다. 최종 모델은 val 최저점의 체크포인트로 고르고, 성능 보고는 여러 시드의 평균과 표준편차로 하며, 최종 수치는 학습·튜닝에 쓰지 않은 test set으로 딱 한 번만 확인합니다.

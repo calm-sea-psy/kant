@@ -154,7 +154,7 @@
 
 ## 07. 딥러닝 기초와 PyTorch
 
-> 출처 TIL: 260819, 260820, 260821, 260824, 260825, 260826
+> 출처 TIL: 260819, 260820, 260821, 260824, 260825, 260826, 260827
 
 - **ML vs DL**: 머신러닝은 사람이 특징을 설계, 딥러닝은 모델이 데이터에서 특징 표현을 스스로 학습
 - **딥러닝 파이프라인 순서**: import → config → data/dataloader → model → loss → optimizer → train loop → validation loop → logging → checkpoint
@@ -237,3 +237,33 @@
 - **random_split**: `Dataset`을 인덱스 기반으로 무작위 분할해 `Subset`을 반환(메모리 복사 없음). 클래스 비율 미보장, transform 공유 문제 있음 — stratify나 별도 transform Dataset+동일 인덱스로 우회
 - **SubsetWithTransform**: 원본 Dataset은 transform 없이 두고, `random_split`은 인덱스만 뽑는 데 쓴 뒤, 그 인덱스+원하는 transform을 직접 소유하는 wrapper 클래스로 감싸는 패턴. "데이터"와 "전처리"를 완전히 분리해 transform 공유 문제를 근본적으로 해결
 - **데이터 파이프라인 디버깅 매핑**: NaN loss→Normalize/lr/라벨 이상, val acc 정체→라벨 매칭·데이터 누수·val augmentation 오류, 특정 클래스만 오답→클래스 불균형, shape 에러→Resize 누락·채널 혼재, 재현 안 됨→split 시드 미고정, 배포 후 성능 저하→전처리 불일치
+- **randomness 발생 지점**: random_split·weight 초기화·shuffle·augmentation·Dropout·워커 난수·GPU 비결정 연산 — 매 실행 결과가 달라짐
+- **seed 고정 3목적**: 재현성, 디버깅(결정적 실행), 공정 비교("다른 조건 동일"). PRNG는 시작 상태 같으면 시퀀스 완전 재생
+- **PyTorch 시드 고정**: `random`/`numpy`/`torch.manual_seed`/`cuda.manual_seed_all` + DataLoader는 `generator`·`worker_init_fn`, `random_split`도 generator
+- **완전 결정적 모드**: `use_deterministic_algorithms(True)` + `cudnn.deterministic=True`·`benchmark=False` — 느려서 최종 실험/디버깅용
+- **seed 주의**: 시드≠완벽 재현(환경 의존), 단일 시드 과신 금지(3~5개 평균±std로 보고), `set_seed()`는 맨 앞 1회, 시드 로그에 기록
+- **logging 대상**: config(seed/lr/구조), train·val 지표(항상 쌍), LR·grad norm, 자원, checkpoint 경로. train↔val 간격이 과적합 신호
+- **logging 단위**: step(N스텝마다/구간평균) vs epoch(요약) vs best 갱신 시점. 콘솔=요약, 파일/트래커=세부
+- **logging sink**: `logging` 모듈(콘솔+파일), metrics.csv/jsonl, TensorBoard/W&B, config 스냅샷, ckpt. run 폴더 하나로 격리(타임스탬프+하이퍼파라미터)
+- **logging 실수**: train만 로깅, raw loss만 남김, config·git hash 미기록, `print` 사용, 매 스텝 히스토그램, DDP 전원 로깅, 매 epoch checkpoint
+- **state_dict**: "이름→텐서" 매핑. 모델은 파라미터+버퍼(BN running stats), optimizer는 모멘트(exp_avg 등)·param_groups
+- **버퍼 저장 중요성**: BN running_mean/var는 gradient 없지만 state_dict에 포함 — 빠뜨리면 추론 시 BN 통계 초기화되어 성능 붕괴
+- **모델 저장 방식**: `torch.save(model)`(pickle, 클래스 경로 의존, 깨지기 쉬움) vs `state_dict`만(이식성↑, 권장)
+- **checkpoint 구성**: 추론용=model만 / 재개용=model+optimizer+scheduler+scaler+epoch+RNG / 실험관리=+best metric+config+git hash
+- **best.pt vs last.pt**: last=매 epoch 덮어씀, full checkpoint, 재개용 / best=val 개선 시만, model만 가볍게, 배포용(마지막 epoch≠최고)
+- **checkpoint 문제**: Missing/Unexpected key(구조 불일치→`strict=False`), `module.` 접두사(DDP), BN 저하(버퍼·`eval()`), `map_location`, `weights_only`
+- **모델 불러오기 vs 학습 재개**: 전자는 "값"만 복원(best.pt, optimizer 새로 생성, epoch 0) / 후자는 "진행 상태" 전체 복원(last.pt, 모멘텀·스케줄·RNG 유지)
+- **optimizer 복원 필수 이유**: Adam 모멘트가 0부터 다시 쌓이면 첫 스텝 업데이트 왜곡 → loss 튐. scheduler `last_epoch`, start_epoch, global_step도 복원
+- **추론 시 eval()**: `training=False` 재귀 설정 — Dropout 끔(전체 뉴런), BatchNorm은 running stats 고정 사용. 안 하면 비결정적·배치 의존 출력. autograd와는 무관
+- **inference_mode() vs no_grad()**: 둘 다 그래프 생성 차단(메모리·속도) / inference_mode는 version counter·view 추적까지 차단(더 공격적, 결과 텐서 재사용 불가)
+- **eval()과 inference_mode()는 직교**: 모듈 동작 모드 vs autograd 동작 — 추론엔 둘 다 필요
+- **train/val loss 곡선(x=epoch)**: 겹쳐 그려 일반화 상태·중단 시점·튜닝 방향·버그를 진단. 5절의 learning curve(x=데이터크기)와 다름
+- **곡선 3축**: gap(일반화 갭, 크면 과적합), 추세·모양(감소/plateau/U자), val 최저점 위치(마지막이면 더 학습, 중간이면 early stopping)
+- **곡선 패턴**: 과적합=train↓ val U자, 과소적합=둘 다 높게 정체, LR 과다=요동/NaN, 계단식 하락=스케줄러 LR 감소(정상)
+- **val loss < train loss**: Dropout/측정시점 차이면 정상, val set 편향이면 split 재확인, 갭 크고 지속되면 데이터 누수(버그)
+- **곡선 팁**: 같은 축·같은 스케일, 필요시 log scale, accuracy도 같이, 스무딩, val 최저점 마커, 시드 3~5개 밴드
+- **Overfitting vs Underfitting**: over=train 좋고 val 나쁨·갭 큼(잡음까지 암기) / under=둘 다 나쁨·갭 작음(패턴 못 배움)
+- **Bias–Variance**: bias 높음=underfitting(표현력 부족), variance 높음=overfitting(데이터 변화에 민감). 복잡도↑ → bias↓ variance↑
+- **Underfitting 대응**: 모델 용량↑, 더 오래 학습, LR 조정, 규제 완화, 입력 정규화. 먼저 작은 배치에 과적합되는지 확인(안 되면 코드 버그)
+- **Overfitting 대응(효과순)**: 데이터·증강 → early stopping → 규제(weight decay·dropout) → 모델 축소 → BN·label smoothing → 앙상블 → 누수 점검
+- **3가지 레버**: 모델 복잡도, 학습 시간(epoch, early stopping이 규제처럼 작동), 데이터 양·품질. 목표는 val 성능 최고 지점
