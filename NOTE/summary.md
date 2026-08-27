@@ -238,9 +238,10 @@
 - **SubsetWithTransform**: 원본 Dataset은 transform 없이 두고, `random_split`은 인덱스만 뽑는 데 쓴 뒤, 그 인덱스+원하는 transform을 직접 소유하는 wrapper 클래스로 감싸는 패턴. "데이터"와 "전처리"를 완전히 분리해 transform 공유 문제를 근본적으로 해결
 - **데이터 파이프라인 디버깅 매핑**: NaN loss→Normalize/lr/라벨 이상, val acc 정체→라벨 매칭·데이터 누수·val augmentation 오류, 특정 클래스만 오답→클래스 불균형, shape 에러→Resize 누락·채널 혼재, 재현 안 됨→split 시드 미고정, 배포 후 성능 저하→전처리 불일치
 - **randomness 발생 지점**: random_split·weight 초기화·shuffle·augmentation·Dropout·워커 난수·GPU 비결정 연산 — 매 실행 결과가 달라짐
+- **재현성(reproducibility)**: 같은 코드 재실행 시 같은 결과가 나오는 성질. 여러 난수 생성기 시드 고정이 출발점
 - **seed 고정 3목적**: 재현성, 디버깅(결정적 실행), 공정 비교("다른 조건 동일"). PRNG는 시작 상태 같으면 시퀀스 완전 재생
 - **PyTorch 시드 고정**: `random`/`numpy`/`torch.manual_seed`/`cuda.manual_seed_all` + DataLoader는 `generator`·`worker_init_fn`, `random_split`도 generator
-- **완전 결정적 모드**: `use_deterministic_algorithms(True)` + `cudnn.deterministic=True`·`benchmark=False` — 느려서 최종 실험/디버깅용
+- **결정론적 실행(determinism)**: 시드만으로는 재현성(비슷한 결과)까지, GPU 커널 비결정 연산까지 없애 비트 단위 동일하게 = `use_deterministic_algorithms(True)` + `cudnn.deterministic=True`·`benchmark=False` (느려서 최종 실험/디버깅용)
 - **seed 주의**: 시드≠완벽 재현(환경 의존), 단일 시드 과신 금지(3~5개 평균±std로 보고), `set_seed()`는 맨 앞 1회, 시드 로그에 기록
 - **logging 대상**: config(seed/lr/구조), train·val 지표(항상 쌍), LR·grad norm, 자원, checkpoint 경로. train↔val 간격이 과적합 신호
 - **logging 단위**: step(N스텝마다/구간평균) vs epoch(요약) vs best 갱신 시점. 콘솔=요약, 파일/트래커=세부

@@ -716,6 +716,8 @@ train_dataset, val_dataset, test_dataset = random_split(
 
 딥러닝 학습은 본질적으로 확률적(stochastic)입니다. 무작위성이 있어야 학습이 되는 부분도 있고, 단지 편의상 무작위인 부분도 있는데, MLP 파이프라인을 순서대로 따라가면 난수가 쓰이는 지점이 여러 곳입니다. 데이터를 train/val로 나누는 `random_split`에서 어떤 샘플이 어느 쪽에 들어갈지, `nn.Linear`의 weight/bias 초기화(기본값은 Kaiming uniform)에서 학습 시작점이 어디일지, DataLoader의 `shuffle=True`가 매 epoch 배치를 어떤 순서로 구성할지, `RandomCrop`·`RandomHorizontalFlip` 같은 데이터 증강이 매 스텝 입력을 어떻게 변형할지, Dropout이 매 forward마다 어떤 뉴런을 끌지가 모두 난수로 정해집니다. 여기에 `num_workers>0`이면 워커별 난수 상태가 따로 돌고, GPU에서는 일부 CUDA 커널의 비결정적 atomic 연산이나 cuDNN의 알고리즘 자동 선택 때문에 같은 시드라도 결과가 미세하게 갈릴 수 있습니다. 결국 같은 코드를 두 번 돌려도 loss 곡선과 최종 정확도가 다르게 나옵니다. 이 변동성 자체가 문제라기보다, 실험을 비교할 때 방해가 된다는 점이 핵심입니다.
 
+같은 코드를 다시 돌려도 같은 결과가 나오는 성질을 재현성(reproducibility)이라 부르고, 여러 난수 생성기(`random`, `numpy`, `torch`, `torch.cuda`)의 시드를 같은 값으로 고정하는 것이 그 출발점입니다.
+
 그래서 seed를 고정합니다. 이유는 세 가지입니다. 재현성 — 논문이나 과제 결과를 남이 똑같이 돌려볼 수 있어야 합니다. 디버깅 — "이번엔 왜 터졌지"를 추적하려면 실행이 결정적이어야 합니다. 공정한 비교 — 학습률 0.01과 0.001을 비교할 때 초기화와 배치 순서가 매번 다르면, 성능 차이가 하이퍼파라미터 때문인지 운 때문인지 알 수 없습니다. 시드를 같게 두면 "다른 조건은 동일"이 성립합니다. seed는 난수 생성기(PRNG)의 시작 상태를 지정하는 값이고, PRNG는 결정적 알고리즘이라 시작 상태가 같으면 이후 난수 시퀀스가 완전히 똑같이 재생됩니다.
 
 PyTorch에서 시드를 고정하는 기본 형태는 다음과 같습니다.
@@ -747,7 +749,7 @@ loader = DataLoader(dataset, batch_size=64, shuffle=True,
 
 43절의 `random_split`도 `generator=torch.Generator().manual_seed(seed)`를 넘겨서 분할을 고정합니다.
 
-여기까지 해도 GPU 연산은 여전히 완전히 결정적이지 않습니다. 끝까지 결정적으로 만들려면 `torch.use_deterministic_algorithms(True)`, `torch.backends.cudnn.deterministic = True`, `torch.backends.cudnn.benchmark = False`를 설정하고 필요하면 `CUBLAS_WORKSPACE_CONFIG=:4096:8` 환경변수를 줍니다. 다만 이 모드는 학습 속도를 떨어뜨리므로 최종 실험이나 디버깅 때만 켜는 경우가 많습니다.
+여기까지 해도 GPU 연산은 여전히 완전히 결정적이지 않습니다. 시드 고정만으로 얻는 재현성은 "비슷한 결과"까지이고, GPU 커널의 비결정적 연산까지 없애 비트 단위로 동일한 결과를 만드는 것은 별도로 결정론적 실행(determinism)이라 부릅니다. 여기까지 가려면 `torch.use_deterministic_algorithms(True)`, `torch.backends.cudnn.deterministic = True`, `torch.backends.cudnn.benchmark = False`를 설정하고 필요하면 `CUBLAS_WORKSPACE_CONFIG=:4096:8` 환경변수를 줍니다. 다만 이 모드는 학습 속도를 떨어뜨리므로 최종 실험이나 디버깅 때만 켜는 경우가 많습니다.
 
 주의할 점이 몇 가지 있습니다. 시드 고정이 완벽한 재현을 보장하지는 않습니다 — PyTorch·CUDA·cuDNN 버전, GPU 모델, CPU와 GPU 여부가 다르면 결과가 갈릴 수 있어서, 재현성은 "같은 환경 + 같은 시드"라는 조건부입니다. 또 단일 시드 결과를 과신하면 안 됩니다. 시드 하나로 낸 정확도는 그 시드의 운을 포함하므로, 모델이나 방법을 비교할 때는 시드를 3~5개로 돌려서 평균과 표준편차로 보고하는 것이 올바릅니다. 시드 고정은 "재현"을 위한 것이고, 성능 평가는 "여러 시드의 분포"로 해야 합니다. `set_seed()`는 스크립트 맨 앞, 모델과 DataLoader를 만들기 전에 한 번만 부릅니다. 중간에 다시 부르면 난수 시퀀스가 꼬여 의도와 달라집니다. 마지막으로, 어떤 시드로 낸 결과인지 로그에 남겨야 나중에 재현할 수 있습니다.
 
