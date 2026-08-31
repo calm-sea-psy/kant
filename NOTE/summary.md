@@ -154,7 +154,7 @@
 
 ## 07. 딥러닝 기초와 PyTorch
 
-> 출처 TIL: 260819, 260820, 260821, 260824, 260825, 260826, 260827
+> 출처 TIL: 260819, 260820, 260821, 260824, 260825, 260826, 260827, 260828
 
 - **ML vs DL**: 머신러닝은 사람이 특징을 설계, 딥러닝은 모델이 데이터에서 특징 표현을 스스로 학습
 - **딥러닝 파이프라인 순서**: import → config → data/dataloader → model → loss → optimizer → train loop → validation loop → logging → checkpoint
@@ -268,3 +268,44 @@
 - **Underfitting 대응**: 모델 용량↑, 더 오래 학습, LR 조정, 규제 완화, 입력 정규화. 먼저 작은 배치에 과적합되는지 확인(안 되면 코드 버그)
 - **Overfitting 대응(효과순)**: 데이터·증강 → early stopping → 규제(weight decay·dropout) → 모델 축소 → BN·label smoothing → 앙상블 → 누수 점검
 - **3가지 레버**: 모델 복잡도, 학습 시간(epoch, early stopping이 규제처럼 작동), 데이터 양·품질. 목표는 val 성능 최고 지점
+- **Dropout**: 학습 중 뉴런을 확률 p로 꺼서 공적응 방지·앙상블 효과. 학습 시 살아남은 값 1/(1-p) 스케일(inverted), 추론 시 끔(eval 필수). 은닉층 0.5, conv엔 잘 안 씀
+- **Batch Normalization**: activation을 미니배치 채널별로 평균0·분산1 정규화 후 학습 파라미터로 재조정. 손실 표면을 매끄럽게 해 큰 LR 허용·초기화 둔감·약한 정규화. Linear/Conv→BN→ReLU, 앞 층 bias 생략
+- **BN 학습 vs 추론**: 학습=미니배치 통계+running 통계 누적, 추론=running 통계 사용(eval 필수). 작은 배치에서 부정확→LayerNorm/GroupNorm, 시퀀스엔 LayerNorm 표준
+- **Dropout vs BN**: Dropout은 정규화 목적·배치 무관, BN은 최적화 안정화 목적·배치 의존 큼. 함께 쓰면 variance shift 충돌(ResNet은 BN만), 순서는 BN→ReLU→Dropout
+- **Early Stopping**: val 지표가 개선 안 되면 patience만큼 참다 중단하고 best 가중치 복원. epoch를 규제 대상으로 삼는 사실상 공짜 정규화. L2 weight decay와 유사 효과
+- **Early Stopping 하이퍼파라미터**: patience(5~20), min_delta, monitor, mode(min/max), restore_best_weights(True). 반드시 val 기준, LR 스케줄 마지막 구간·double descent 주의
+- **Convolution**: 작은 가중치 창을 훑으며 국소 곱-합으로 feature map 생성. 실제론 cross-correlation. 국소 연결+가중치 공유로 파라미터 급감·평행이동 등변성·계층적 특징
+- **Kernel vs Filter**: kernel=입력 채널 1개 담당하는 2D 가중치 격자, filter=입력 채널 수만큼 kernel 묶음+bias로 출력 채널 1장 생산. conv 층 weight shape (out_ch, in_ch, kH, kW)
+- **3×3 여러 층**: 큰 커널 한 층보다 3×3을 쌓는 게 표준(같은 시야, 파라미터 적음)
+- **Padding**: 가장자리에 값(보통 0) 덧대 출력 크기 유지·모서리 정보 손실 방지. 파라미터 무관, valid(없음)/same(크기 보존)
+- **Stride**: 창을 몇 칸씩 건너뛸지. 2면 출력 1/2·픽셀 1/4로 다운샘플링, 연산량↓·receptive field↑, 위치 정보 손실
+- **CNN 전형 패턴**: conv(K3,P1,S1)로 크기 유지하며 특징 추출 → 단계 전환 지점만 stride2/pooling으로 절반 축소+채널 2배. 해상도↓+채널↑ 반복
+- **Pooling**: 창 안 값을 max/average로 요약(학습 가중치 없음). 다운샘플링+평행이동 불변성 강화(등변성과 구별). max pooling은 최댓값 위치로만 gradient
+- **Feature map**: filter 하나의 2D 반응 지도. 채널 축="어떤 특징", 공간 축="그 특징이 어디에". 중간 층 채널은 학습된 패턴 검출기, 마지막 conv 층은 Grad-CAM 재료
+- **CNN classifier**: backbone(conv/pool 반복, 공간 구조 유지, 픽셀→의미) + 분류 헤드(Flatten/GAP 후 Linear, 사실상 MLP) → 클래스 logit
+
+## 08. RNN과 LSTM
+
+> 출처 TIL: 260831
+
+- **RNN이 필요한 이유**: 순서가 의미를 갖는 가변 길이 데이터(문장·음성·시계열). 이전 시점 정보를 hidden state로 기억해 다음 시점에 넘김
+- **은닉 상태 갱신**: 매 시점 (새 입력 + 직전 기억) 두 개를 받아 각각 변환 후 더하고 tanh → 갱신된 기억. 필요 시 여기서 출력을 뽑고, 이 기억이 다음 시점 입력으로 되먹임
+- **가중치 공유**: 입력변환·기억변환·출력변환 세 규칙을 모든 시점이 재사용 → 길이 무관 처리, 파라미터 수 일정, 위치 무관 패턴 학습(CNN 필터와 같은 발상)
+- **BPTT**: 시퀀스를 시간축으로 펼친 뒤 일반 역전파. 길면 메모리 부담 커서 일정 길이로 잘라 학습(truncated BPTT), 경계 넘는 의존성은 학습 불가
+- **W_hh (은닉-은닉 가중치)**: 직전 은닉 상태를 이번 기억에 반영하는 규칙. 은닉 차원이 d면 d×d 정사각 행렬. 세 규칙 중 유일하게 시간 방향으로 연쇄해서 곱해짐
+- **기울기 소실/폭발**: 먼 과거 gradient는 W_hh를 시점 수만큼 거듭제곱하는 꼴 → 영향력 1 미만이면 지수적 소실(장기 의존성 실패), 1 초과면 폭발(clipping으로 완화). 바닐라 RNN은 10~20 스텝부터 기억 상실
+- **RNN 개선 구조**: LSTM(cell state+게이트 3개), GRU(게이트 2개, cell state 없음), 양방향(전체 문장 주어질 때만), 다층(은닉 상태를 다음 층 입력으로)
+- **LSTM 해법**: 정보 고속도로(cell state) + 무엇을 지우고 더하고 내보낼지 조절하는 학습된 스위치(게이트)
+- **두 개의 상태**: cell state=장기 기억, 곱셈·덧셈만 거쳐 흐르는 컨베이어 벨트(gradient 경로). hidden state=단기 기억이자 출력, cell state를 필터링한 것
+- **forget gate**: 기존 cell state 중 버릴 것 선택(0=삭제, 1=유지)
+- **input gate**: 새 후보 정보 중 저장할 것 선택. cell state 갱신 = (기존 기억 × forget) + (새 후보 × input), 삭제와 추가가 분리됨
+- **output gate**: 갱신된 cell state 중 이번 시점 hidden state로 내보낼 부분 선택
+- **LSTM에서 gradient가 사는 이유**: cell state 갱신이 덧셈 중심. forget≈1이면 이전 cell state가 손실 없이 전달되고 역전파도 감쇠 없이 흐름. forget bias를 1로 초기화하는 요령
+- **RNN vs LSTM**: 전달 상태 1개 vs 2개, 곱셈 연쇄 vs 덧셈 경로, 장기 의존성 수십 스텝 vs 수백 스텝, 게이트 0개 vs 3개, 파라미터 약 4배
+- **GRU**: 게이트 2개·cell state 없음, 파라미터 적고 빠름, 성능 비슷. 데이터 적으면 GRU, 큰 데이터·긴 의존성이면 LSTM
+- **한계: 순차 계산**: hidden state가 직전 것에 의존 → 시간축 병렬화 불가, 학습 속도가 길이에 비례. 대규모 사전학습 시대에 밀려난 결정적 이유
+- **한계: 고정 크기 은닉 상태 병목**: 읽은 내용 전부를 벡터 하나에 압축 → 긴 문장에서 오래된 정보 소실. seq2seq의 이 병목을 뚫으려 어텐션 등장 → RNN 없이 어텐션만 = Transformer
+- **한계: 먼 거리 경로**: 토큰 1↔100은 99개 중간 스텝 통과하며 희석. Transformer는 어텐션으로 경로 길이 1
+- **한계: 단방향성**: 기본 RNN은 좌→우만. BiLSTM은 전체 시퀀스 필요(실시간 불가), 두 단방향의 concat에 가까움
+- **한계: 학습**: 기울기 문제 완화됐을 뿐 잔존(수백 스텝), 폭발은 여전해 clipping 필수, BPTT 메모리, 노출 편향(teacher forcing↔자기 출력), 계층·중첩 구조 표현 취약
+- **여전히 쓰이는 곳**: 저지연 스트리밍(음성 인식·실시간 번역), 임베디드·모바일, 짧은 시계열, 온라인 학습. S4·Mamba 등 state space model이 발상 계승

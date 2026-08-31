@@ -23,6 +23,17 @@ MD_TABLE_SEP = re.compile(r'^\s*\|(\s*:?-+:?\s*\|)+\s*$')
 # "y.grad_fn 을 ...").
 MARKER = re.compile(r'^([ㄱ-ㅎ]\)(?=\S)|[a-h]\.(?=[가-힣]))')
 
+# 존댓말/해요체 종결 — TIL 은 평서체(-다/-한다/-음)로 통일한다.
+# 문장 끝(마침표·물음표·괄호·따옴표·줄끝) 직전에 오는 경우만 잡아 오탐을 줄인다.
+POLITE = re.compile(
+    r'(습니다|ㅂ니다|입니다|합니다|됩니다|'
+    r'[가-힣]해요|[가-힣]예요|[가-힣]에요|[가-힣]어요|[가-힣]아요|'
+    r'거든요|[가-힣]이죠|[가-힣]죠|[가-힣]네요|[가-힣]군요|'
+    r'하세요|보세요|주세요|하십시오|바랍니다|드립니다|'
+    r'까요\?|나요\?|가요\?)'
+    r'["\'”』」)\]]*[.?!…]*\s*$'
+)
+
 
 def find_til_dir():
     d = os.getcwd()
@@ -66,6 +77,16 @@ def lint(path):
         # marker without following space
         if MARKER.match(l):
             out.append((i, f'마커 뒤 공백 누락: {l[:20]!r}'))
+
+        # 존댓말/해요체 종결
+        if POLITE.search(l):
+            out.append((i, f'존댓말/해요체 종결 (평서체 -다/-한다/-음으로): …{stripped[-24:]!r}'))
+        else:
+            m = re.search(r'([가-힣])니다["\'”』」)\]]*[.?!…]*\s*$', l)
+            if m:
+                c = ord(m.group(1)) - 0xAC00
+                if 0 <= c < 11172 and c % 28 == 17 and m.group(1) != '습':
+                    out.append((i, f'존댓말 종결(-ㅂ니다) (평서체로): …{stripped[-24:]!r}'))
 
     # markdown table checks
     for i, l in enumerate(lines):
