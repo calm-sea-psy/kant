@@ -78,6 +78,13 @@ def lint(path):
         if MARKER.match(l):
             out.append((i, f'마커 뒤 공백 누락: {l[:20]!r}'))
 
+        # bare URL — 참고 링크는 마크다운 링크 [라벨](URL) 로 (규칙 11)
+        for mu in re.finditer(r'https?://', l):
+            s = mu.start()
+            if not (s >= 2 and l[s - 2:s] == ']('):
+                out.append((i, f'마크다운 링크가 아닌 맨 URL (규칙 11: [라벨](URL) 로): {stripped[:40]!r}'))
+                break
+
         # 존댓말/해요체 종결
         if POLITE.search(l):
             out.append((i, f'존댓말/해요체 종결 (평서체 -다/-한다/-음으로): …{stripped[-24:]!r}'))

@@ -1,13 +1,13 @@
 ---
 name: til-format
-description: This repo's house formatting convention for TIL/*.md daily study notes — plain-text sections (no markdown headers), 4-space bullets, indented fenced-less code, markdown tables, no LaTeX. Use this whenever writing a new TIL/YYMMDD.md file, editing or restructuring an existing one, or when the user says things like "TIL 형식 맞춰줘", "들여쓰기 통일해줘", "이 TIL 정리해줘", "표 정리해줘", or asks to check/fix formatting of anything under TIL/. Run scripts/til_lint.py to catch violations before finishing. Not for NOTE/ files (those use standard markdown) — see the til-to-note skill for the TIL→NOTE pipeline.
+description: This repo's house formatting convention for TIL/*.md daily study notes — plain-text sections (no markdown headers), 4-space bullets, indented fenced-less code, markdown tables and links, no LaTeX. Use this whenever writing a new TIL/YYMMDD.md file, editing or restructuring an existing one, or when the user says things like "TIL 형식 맞춰줘", "들여쓰기 통일해줘", "이 TIL 정리해줘", "표 정리해줘", or asks to check/fix formatting of anything under TIL/. Run scripts/til_lint.py to catch violations before finishing. Not for NOTE/ files (those use standard markdown) — see the til-to-note skill for the TIL→NOTE pipeline.
 ---
 
 # TIL 서식 규칙
 
 TIL/*.md 는 하루치 학습 정리입니다. 매일 훑어보며 리마인드하고, `til-to-note` 스킬이 이 파일들을 읽어 NOTE 교안으로 재구성합니다. 그래서 **파일마다 구조가 제각각이면 안 됩니다.** 아래 규칙은 이 저장소의 모든 TIL 파일이 실제로 따르는 관례를 고정한 것입니다.
 
-핵심 철학: TIL 은 "GitHub 에서 렌더링해 읽는 문서"가 아니라 "에디터에서 빠르게 훑는 평문 메모"입니다. 그래서 마크다운 장식(`#` 헤더, 백틱, 펜스)을 최소화하고, 대신 번호·들여쓰기라는 순수 텍스트 구조만 씁니다. 예외는 표뿐입니다 — 표는 평문 정렬이 깨지기 쉬워 마크다운 표를 씁니다.
+핵심 철학: TIL 은 "GitHub 에서 렌더링해 읽는 문서"가 아니라 "에디터에서 빠르게 훑는 평문 메모"입니다. 그래서 마크다운 장식(`#` 헤더, 백틱, 펜스)을 최소화하고, 대신 번호·들여쓰기라는 순수 텍스트 구조만 씁니다. 예외는 표와 링크뿐입니다 — 표는 평문 정렬이 깨지기 쉬워 마크다운 표를, 참고 URL 은 클릭 가능하도록 마크다운 링크를 씁니다.
 
 ## 규칙
 
@@ -108,6 +108,15 @@ NOTE/ 교안은 반대로 존댓말 산문입니다(그건 `til-to-note` 스킬 
 
 한 파일 안에서 말투가 섞여 있으면 전부 평서체로 맞춥니다. 종결 어미만 바꾸고 **문장의 내용·표현은 그대로 둡니다.** `-습니다`→`-다`, `-합니다`→`-한다`(단, `가능합니다`·`동일합니다` 같은 형용사는 `-하다`), `-됩니다`→`-된다`, `쓰입니다`→`쓰인다`, `나옵니다`→`나온다` 처럼 어간에 맞춰 활용을 되돌립니다. 불규칙 활용(`부릅니다`→`부른다`, `만듭니다`→`만든다`)에 주의하고, 변환 후 `git diff` 로 활용이 깨진 곳(`동일한다`, `생기다`, `"…"다` 같은 어색한 형태)이 없는지 눈으로 검토합니다.
 
+### 11. 참고 URL 은 마크다운 링크로
+
+논문·코드·문서 URL 은 `[라벨](URL)` 형태의 마크다운 인라인 링크로 씁니다. 맨 URL 을 그대로 붙이거나 `# https://...` 처럼 주석 흉내로 달지 않습니다.
+
+- `# https://arxiv.org/abs/...` (X) / `https://arxiv.org/abs/...` (X) → `[논문](https://arxiv.org/abs/...)` (O)
+- 절 제목 바로 아래 출처 링크는 본문처럼 0칸에서, 한 줄에 하나씩.
+- 이건 표와 함께 "평문 메모" 원칙의 유일한 예외입니다. 링크 문법 말고 다른 마크다운 장식(백틱·헤더 등)은 여전히 쓰지 않습니다.
+- 참조형 링크(`[1]: URL`)나 꺾쇠 자동링크(`<URL>`)는 쓰지 않습니다 — 인라인 `[라벨](URL)` 하나로 통일.
+
 ## 새 TIL 파일을 쓸 때
 
 파일명은 `TIL/YYMMDD.md` (예: `TIL/260827.md`). 위 규칙대로 작성하면 됩니다. 하루에 여러 주제를 다뤄도 한 파일에 `1. 2. 3. ...` 로 이어서 씁니다.
@@ -116,7 +125,7 @@ NOTE/ 교안은 반대로 존댓말 산문입니다(그건 `til-to-note` 스킬 
 
 1. 파일을 통째로 읽습니다.
 2. 규칙 위반을 찾아 고칩니다. **내용(문장·설명·의미)은 바꾸지 않습니다.** 명백한 오타(깨진 링크 파편, `$ㅇ` 같은 꼬리 문자, 용어 오타)만 함께 고치고, 무엇을 고쳤는지 보고에 남깁니다.
-3. 마크다운 헤더 → 번호 구조 / 펜스 코드 → 4칸 들여쓰기 / 평문 표 → 마크다운 표 / `- 소제목` → 평문 라벨 또는 `ㄱ)` / LaTeX 제거 / 들여쓰기 0·4·8 정규화 / 존댓말·해요체 → 평서체(규칙 10).
+3. 마크다운 헤더 → 번호 구조 / 펜스 코드 → 4칸 들여쓰기 / 평문 표 → 마크다운 표 / 맨 URL·`# https://...` → 마크다운 링크(규칙 11) / `- 소제목` → 평문 라벨 또는 `ㄱ)` / LaTeX 제거 / 들여쓰기 0·4·8 정규화 / 존댓말·해요체 → 평서체(규칙 10).
 4. `python .claude/skills/til-format/scripts/til_lint.py TIL/YYMMDD.md` 로 검증합니다. 위반이 남아 있으면 다시 고칩니다.
 5. 이 파일이 이미 NOTE 에 반영돼 있었다면(`NOTE/.manifest.json` 에 존재), 형식만 바뀌었으므로 재동기화는 불필요합니다. 다만 매니페스트 해시가 어긋나 다음 `til-to-note` 스캔에서 "changed" 로 잡히므로, 형식만 고친 경우 다음 명령으로 해시를 갱신해 둡니다:
 
@@ -133,4 +142,4 @@ python .claude/skills/til-to-note/scripts/til_manifest.py update YYMMDD.md <그�
 ## 검증 스크립트
 
 `scripts/til_lint.py [파일...]` — 인자 없으면 `TIL/*.md` 전체.
-검사: 마크다운 헤더, 펜스 코드 블록, `$...$` LaTeX, 맨 앞 빈 줄, 구분선 없는 마크다운 표, 마커(`ㄱ)`/`a.`) 뒤 공백 누락, 표 앞뒤 빈 줄 누락, 존댓말·해요체 종결(규칙 10). 위반을 `파일:줄  설명` 형식으로 출력하고, 하나라도 있으면 종료 코드 1.
+검사: 마크다운 헤더, 펜스 코드 블록, `$...$` LaTeX, 맨 앞 빈 줄, 구분선 없는 마크다운 표, 마커(`ㄱ)`/`a.`) 뒤 공백 누락, 표 앞뒤 빈 줄 누락, 존댓말·해요체 종결(규칙 10), 마크다운 링크가 아닌 맨 URL(규칙 11). 위반을 `파일:줄  설명` 형식으로 출력하고, 하나라도 있으면 종료 코드 1.

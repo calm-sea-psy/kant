@@ -82,13 +82,18 @@
     },
     "260828.md": {
       "group": "07-딥러닝기초와PyTorch",
-      "hash": "f8c4e530b68400e9210fa7f76f97b8e2c1a98ebeaea6462b7282e94cd95479cc",
-      "processed_at": "2026-08-31T03:49:12+00:00"
+      "hash": "bd0fd16341354343e801f095a78fce727ee85aadb4c598b29ccc28a520172fe4",
+      "processed_at": "2026-09-01T04:07:37+00:00"
     },
     "260831.md": {
       "group": "08-RNN과LSTM",
       "hash": "353468898c1adb2b5a3509049fc8fd12479943811688c4296f11b64c35b87ff2",
       "processed_at": "2026-08-31T03:49:13+00:00"
+    },
+    "260901.md": {
+      "group": "09-LLM추론과서빙",
+      "hash": "e0c89d9291c7869dd7a2c58742e402f841a82e8a72172994f7298acce87983a6",
+      "processed_at": "2026-09-01T04:07:37+00:00"
     }
   }
 }
