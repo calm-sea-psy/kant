@@ -94,6 +94,11 @@
       "group": "09-FreeToken",
       "hash": "e0c89d9291c7869dd7a2c58742e402f841a82e8a72172994f7298acce87983a6",
       "processed_at": "2026-09-01T04:07:37+00:00"
+    },
+    "260902.md": {
+      "group": "11-자연어처리기초",
+      "hash": "bb8d604ae6822310c4a8bb967d1d94c28945255cfb2c2f3c80c6ab833cb476f3",
+      "processed_at": "2026-09-02T04:00:49+00:00"
     }
   }
 }
