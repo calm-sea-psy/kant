@@ -2,3 +2,5 @@ Trade-off/
 LLMBenchMark/
 practice/
 __pycache__/
+mcp-game/
+.claude/launch.json
