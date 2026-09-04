@@ -410,3 +410,8 @@
 - **LayerNorm**: 한 토큰 벡터를 평균0·분산1로 정규화 후 스케일·시프트. BatchNorm과 달리 배치 크기·시퀀스 길이 무관 → 자연어에 적합
 - **Pre-norm vs Post-norm**: post-norm(원조)은 더한 뒤 정규화, 불안정·warmup 필수. pre-norm(GPT-2 이후)은 정규화 먼저, 잔차 경로가 깨끗해 깊은 모델 안정. 마지막에 최종 LayerNorm 추가
 - **Prefill vs Decode**: prefill은 프롬프트 전체를 병렬 처리(K·V 한 번에 계산), decode는 새 토큰 1개씩 순차 생성. 길수록 prefill 어텐션 계산량 급증
+- **KV 캐시**: 각 층에서 과거 토큰의 K·V를 버퍼에 저장해 재사용(causal mask라 안 변함). 스텝당 어텐션 연산이 제곱에서 선형으로. Query만 매번 새로 계산
+- **KV 캐시 크기**: 2(K·V) × 토큰 수 × 층 수 × head 차원 × 정밀도. 롱컨텍스트·동시 요청 수를 제한하는 주 병목(Llama-2 7B는 4096토큰당 약 2GB)
+- **MHA / MQA / GQA / MLA**: head 간 K·V 공유 정도로 캐시 절감. GQA(그룹당 공유)가 품질 손실 거의 없어 현재 표준(Llama-3·Mistral)
+- **KV 캐시 서빙 최적화**: 양자화(int8/fp8), sliding window(캐시 상한), PagedAttention(블록 관리·단편화 제거), prefix caching(공통 프롬프트 재사용)
+- **KV 캐시 주의**: 시간↔공간 트레이드, 학습엔 안 씀(추론 생성만), prefill은 이득 없고 decode부터 효과
