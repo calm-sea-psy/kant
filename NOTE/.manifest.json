@@ -107,8 +107,13 @@
     },
     "260904.md": {
       "group": "12-트랜스포머아키텍처",
-      "hash": "e28377d73b37d7c51970c48d24298aa6182c3f7cbc3d87b5fe7c05249c790148",
-      "processed_at": "2026-09-04T07:18:41+00:00"
+      "hash": "c07d528c81af0adf9fea6862eb3cac890e4b86b4dc5ee66cba534eb7594691de",
+      "processed_at": "2026-09-07T05:39:02+00:00"
+    },
+    "260907.md": {
+      "group": "14-HuggingFaceTransformers",
+      "hash": "d3018366411af93e8b43392c1d819608d39427704205ce05f3024462471b0b2f",
+      "processed_at": "2026-09-07T05:39:02+00:00"
     }
   }
 }

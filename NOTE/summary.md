@@ -415,3 +415,43 @@
 - **MHA / MQA / GQA / MLA**: head 간 K·V 공유 정도로 캐시 절감. GQA(그룹당 공유)가 품질 손실 거의 없어 현재 표준(Llama-3·Mistral)
 - **KV 캐시 서빙 최적화**: 양자화(int8/fp8), sliding window(캐시 상한), PagedAttention(블록 관리·단편화 제거), prefix caching(공통 프롬프트 재사용)
 - **KV 캐시 주의**: 시간↔공간 트레이드, 학습엔 안 씀(추론 생성만), prefill은 이득 없고 decode부터 효과
+
+## 13. 사전학습 언어모델
+
+> 출처 TIL: 260907
+
+- **2단계 패러다임**: 대규모 레이블 없는 텍스트로 pretraining(언어의 통계 구조를 파라미터에 압축) → 소규모 레이블 데이터로 task 적용
+- **Task 적용 3방식**: fine-tuning(파라미터 갱신, BERT 기본), feature extraction(표현만 추출·파라미터 고정), prompting/in-context learning(파라미터 불변·예시만 제공, GPT-3 이후)
+- **LM Objective**: 텍스트 확률분포 P(문장) 모델링. 분해 방식으로 갈림 — Causal LM(왼→오 순차), Masked LM(양방향 복원), Span corruption(구간 복원, T5)
+- **공통 성질**: 손실은 cross-entropy(정답 토큰의 −log 확률), self-supervised라 사람 레이블 불필요 → 인터넷 규모 데이터 사용
+- **Downstream Task**: pretraining 이후 실제로 풀 과제(문장 분류·토큰 분류·문장쌍·생성). pretraining은 목적이 아니라 downstream 성능을 위한 수단
+- **BERT (MLM)**: 인코더 스택만, 양방향 self-attention, 미래 마스킹 없음. 이해·분류·추출에 강하고 자연스러운 생성은 불가
+- **BERT 입력 임베딩**: Token + Position(학습형, 최대 512) + Token Type(문장 A/B) 세 임베딩의 합. 특수 토큰 [CLS]·[SEP]
+- **MLM 학습 레시피**: 토큰 15% 선택 → 80% [MASK]·10% 랜덤·10% 유지(train/실전 불일치 완화). 마스킹 위치 hidden만 MLM head(Linear→GELU→LayerNorm→vocab projection), 그 위치에서만 손실
+- **GPT (CLM)**: 디코더 스택만(cross-attention 없음), 왼→오 단방향. 다음 토큰 예측으로 학습 → 학습 목표가 곧 생성 방식
+- **Causal Self-Attention**: 미래 토큰을 −∞ 마스킹(정답 커닝 방지). 과거 K/V가 안 바뀌므로 KV Cache의 근거
+- **Autoregressive Generation**: 토큰 1개 예측 → 이어붙임 → 반복. 한 번에 한 토큰이라 느림(KV 캐시로 가속)
+- **GPT 입출력**: 각 위치가 다음 토큰 logits 출력, 학습 타겟은 입력을 한 칸 shift, 모든 위치에서 동시에 cross-entropy(teacher forcing) — BERT의 15%와 대비
+- **디코딩 전략**: greedy(1위·반복 취약), beam search(k개 시퀀스 탐색·번역/요약), temperature(분포 뾰족함 조절), top-k(상위 k개 고정), top-p(누적확률 p 가변·대화/창작 기본값)
+- **BERT vs GPT**: encoder-only/decoder-only, 양방향/causal, 마스킹 복원/다음 토큰, 손실 15%만/모든 위치, 이해·분류/생성
+
+## 14. Hugging Face Transformers
+
+> 출처 TIL: 260907
+
+- **Hugging Face Hub**: 모델·데이터셋·데모를 호스팅하는 git 기반 플랫폼. 각 모델 = git 저장소(weight는 git-LFS). 표준 파일 config.json / model.safetensors / tokenizer 파일 / README.md
+- **모델 다운로드**: from_pretrained("조직명/모델명") → 로컬 캐시 자동 저장. 접근 유형 공개/gated/private. revision 인자로 커밋 시점 고정
+- **Hub 탐색 흐름**: 검색 → 필터(task·언어·라이선스·크기) → 정렬(trending/downloads/likes, 인기 지표일 뿐 품질 보장 아님) → Model Card 정독 → Files 탭 확인
+- **Model Card**: README.md = YAML 프론트매터(license·language·tags·datasets·metrics) + 본문. 읽는 순서 라이선스·태그 → 모델 요약 → 용도 → 학습 데이터 → 평가 → 한계·편향 → 예제 코드
+- **pipeline()**: 토크나이즈 → 추론 → 후처리를 한 줄로 묶는 고수준 API. task 이름만 주면 기본 모델 자동 선택. 내부적으로 AutoTokenizer + AutoModelFor* 조합
+- **추상화 계층**: pipeline(제일 쉬움) → AutoClass(토크나이저·모델 직접 제어) → 커스텀 head·학습 루프(완전 제어)
+- **AutoClass**: config.json을 보고 알맞은 구현 클래스를 자동 선택하는 팩토리. AutoConfig/AutoTokenizer/AutoModel/AutoModelFor*. 코드가 특정 모델에 안 묶임
+- **Base vs Task-specific**: AutoModel은 본체만(출력=hidden states), AutoModelFor*는 본체+task head(출력=task logits). base 체크포인트에 task 클래스 로드 시 head 랜덤 초기화 경고 → fine-tune 필요 신호
+- **AutoTokenizer 출력**: input_ids(토큰→정수), attention_mask(실제=1·패딩=0·무시 지시), token_type_ids(문장 A/B, BERT 계열). return_tensors·padding·truncation 인자
+- **AutoModel Base Output**: last_hidden_state (batch, seq_len, hidden)가 주력. pooler_output([CLS] 변환, 신뢰도 낮음), hidden_states·attentions(옵션)
+- **last_hidden_state 해석**: (B, T, H). [b,t,:] = 문맥 반영된 토큰 임베딩. 토큰 분류는 각 위치, 문장 임베딩은 [CLS] 또는 mean pooling(패딩 제외), GPT는 마지막 실제 토큰
+- **Task Head**: base 위에 얹는 Linear 1~2층. Sequence Classification(pooled→num_labels), Token Classification(위치별), QA(start/end), LM(위치별 vocab, 보통 embedding과 weight tying)
+- **ForSequenceClassification vs ForCausalLM**: 분류 head vs LM head, 출력 (batch, num_labels) vs (batch, seq_len, vocab_size), generate() 불가 vs 가능
+- **logits 축 의미**: classification은 (batch=샘플, num_labels=클래스) → argmax로 클래스. vocabulary는 (batch, seq_len=위치, vocab=토큰 점수) → argmax로 다음 토큰, 생성 시 마지막 위치만
+- **저장/재로드**: save_pretrained·from_pretrained. 모델과 토크나이저는 같은 경로에서 쌍으로 로드(vocab-embedding 인덱스 정합성)
+- **재현성 메타데이터**: revision(커밋 해시), transformers·torch 버전, torch_dtype, 랜덤 시드, safetensors, generation_config.json, 학습 시 TrainingArguments·데이터셋 버전
