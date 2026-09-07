@@ -130,10 +130,10 @@ NOTE/ 교안은 반대로 존댓말 산문입니다(그건 `til-to-note` 스킬 
 5. 이 파일이 이미 NOTE 에 반영돼 있었다면(`NOTE/.manifest.json` 에 존재), 형식만 바뀌었으므로 재동기화는 불필요합니다. 다만 매니페스트 해시가 어긋나 다음 `til-to-note` 스캔에서 "changed" 로 잡히므로, 형식만 고친 경우 다음 명령으로 해시를 갱신해 둡니다:
 
 ```
-python .claude/skills/til-to-note/scripts/til_manifest.py update YYMMDD.md <그룹명>
+python .claude/skills/til-to-note/scripts/til_manifest.py update YYMMDD.md <도메인>
 ```
 
-`<그룹명>` 은 `NOTE/.manifest.json` 에서 그 파일의 기존 `group` 값을 그대로 씁니다.
+`<도메인>` 은 `NOTE/.manifest.json` 에서 그 파일의 기존 `group` 값(`1-수학` / `2-머신러닝` / `3-딥러닝` / `4-LLM` 중 하나)을 그대로 씁니다. NOTE 교안은 이 네 개의 도메인 파일(`NOTE/1-수학.md` 등)과 크로스도메인 인덱스 `NOTE/summary.md` 로 이루어집니다 — 자세한 구조는 `til-to-note` 스킬 참고.
 
 ## 여러 파일을 한꺼번에 정리할 때
 

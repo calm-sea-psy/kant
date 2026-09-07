@@ -3,11 +3,11 @@
 TIL -> NOTE manifest helper.
 
 The manifest (NOTE/.manifest.json) tracks, for every TIL/*.md file, the sha256
-hash of its content at the time it was last incorporated into a NOTE group
-file, plus which group file it landed in. This script does the mechanical,
-exactly-verifiable part (hashing, diffing) so the model only has to do the
-part that actually requires judgment: classifying content into topic groups
-and rewriting prose.
+hash of its content at the time it was last incorporated into NOTE, plus which
+domain file it landed in (`group` = 1-수학 / 2-머신러닝 / 3-딥러닝 / 4-LLM).
+This script does the mechanical, exactly-verifiable part (hashing, diffing) so
+the model only has to do the part that actually requires judgment: classifying
+content into a domain and rewriting prose.
 
 Usage:
     python til_manifest.py scan [--til-dir TIL] [--manifest NOTE/.manifest.json]
@@ -16,10 +16,10 @@ Usage:
 
     python til_manifest.py update <til_filename> <group_slug> [--til-dir TIL] [--manifest NOTE/.manifest.json]
         Records that <til_filename> (e.g. 260814.md) has been incorporated
-        into group <group_slug> (e.g. 06-평가지표와데이터누수), stamping the
-        current content hash and timestamp. Call this once per TIL file,
-        right after you've finished writing its content into the
-        summary/detail group files.
+        into domain <group_slug> (one of: 1-수학, 2-머신러닝, 3-딥러닝, 4-LLM),
+        stamping the current content hash and timestamp. Call this once per TIL
+        file, right after you've finished writing its content into the domain
+        file (NOTE/<group_slug>.md) and NOTE/summary.md.
 
     python til_manifest.py init --map MAPPING_JSON [--til-dir TIL] [--manifest NOTE/.manifest.json]
         Bootstraps a manifest from scratch given a mapping of
