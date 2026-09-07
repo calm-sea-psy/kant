@@ -412,6 +412,7 @@
 - **Autoregressive Generation**: 토큰 1개 예측 → 이어붙임 → 반복. 한 번에 한 토큰이라 느림(KV 캐시로 가속)
 - **GPT 입출력**: 각 위치가 다음 토큰 logits 출력, 학습 타겟은 입력을 한 칸 shift, 모든 위치에서 동시에 cross-entropy(teacher forcing) — BERT의 15%와 대비
 - **디코딩 전략**: greedy(1위·반복 취약), beam search(k개 시퀀스 탐색·번역/요약), temperature(분포 뾰족함 조절), top-k(상위 k개 고정), top-p(누적확률 p 가변·대화/창작 기본값)
+- **생성 길이·종료**: max_new_tokens(프롬프트 제외 새 토큰 상한) 도달, EOS 토큰 생성, stop sequence 도달 중 하나로 멈춤
 - **BERT vs GPT**: encoder-only/decoder-only, 양방향/causal, 마스킹 복원/다음 토큰, 손실 15%만/모든 위치, 이해·분류/생성
 
 ### Hugging Face Transformers · [상세 →](4-LLM.md#hugging-face-transformers-기본-활용)
@@ -423,6 +424,7 @@
 - **Hub 탐색 흐름**: 검색 → 필터(task·언어·라이선스·크기) → 정렬(trending/downloads/likes, 인기 지표일 뿐 품질 보장 아님) → Model Card 정독 → Files 탭 확인
 - **Model Card**: README.md = YAML 프론트매터(license·language·tags·datasets·metrics) + 본문. 읽는 순서 라이선스·태그 → 모델 요약 → 용도 → 학습 데이터 → 평가 → 한계·편향 → 예제 코드
 - **pipeline()**: 토크나이즈 → 추론 → 후처리를 한 줄로 묶는 고수준 API. task 이름만 주면 기본 모델 자동 선택. 내부적으로 AutoTokenizer + AutoModelFor* 조합
+- **pipeline task**: sentiment-analysis(문장 분류·긍부정), text-generation(이어쓰기·decoder), ner(토큰별 개체 태깅·encoder), question-answering(context에서 답 구간 추출), summarization(추상 요약·seq2seq), fill-mask([MASK] 예측·MLM 그대로)
 - **추상화 계층**: pipeline(제일 쉬움) → AutoClass(토크나이저·모델 직접 제어) → 커스텀 head·학습 루프(완전 제어)
 - **AutoClass**: config.json을 보고 알맞은 구현 클래스를 자동 선택하는 팩토리. AutoConfig/AutoTokenizer/AutoModel/AutoModelFor*. 코드가 특정 모델에 안 묶임
 - **Base vs Task-specific**: AutoModel은 본체만(출력=hidden states), AutoModelFor*는 본체+task head(출력=task logits). base 체크포인트에 task 클래스 로드 시 head 랜덤 초기화 경고 → fine-tune 필요 신호

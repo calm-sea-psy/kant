@@ -430,6 +430,8 @@ greedy는 매 스텝 확률 1위 토큰만 고릅니다. 빠르고 결정적이�
 
 temperature는 샘플링 자체가 아니라 분포의 뾰족함을 조절하는 값입니다. logits를 temperature로 나눈 뒤 softmax를 취하는데, 1보다 작으면 분포가 뾰족해져 보수적이 되고(0에 가까우면 greedy와 같아집니다), 1보다 크면 평평해져 과감해집니다. 보통 top-k나 top-p와 함께 씁니다. top-k는 확률 상위 k개 토큰만 남기고 그 안에서 확률에 비례해 샘플링합니다. 꼬리에 있는 이상한 토큰이 우연히 뽑히는 것을 막지만, k가 고정이라 분포가 뾰족할 때나 평평할 때 잘 안 맞습니다. top-p(nucleus)는 확률을 높은 순으로 더해가다 누적 합이 p(예를 들어 0.9)를 넘는 지점까지의 토큰만 후보로 남깁니다. 후보 개수가 상황에 따라 자동으로 조절되어 top-k의 약점을 보완하며, 현재 열린 생성에서 가장 널리 쓰이는 기본값입니다.
 
+어떤 토큰을 고를지와 별개로, 생성을 언제 멈출지도 정해야 합니다. max_new_tokens는 프롬프트를 제외하고 새로 만들 토큰 수의 상한입니다. 그 밖에 모델이 EOS 토큰을 생성하거나, 미리 지정한 stop sequence가 나오면 그 지점에서 생성을 끝냅니다.
+
 ### 7. BERT와 GPT 비교
 
 | 구분 | BERT (MLM) | GPT (CLM) |
@@ -480,6 +482,15 @@ pipeline은 토크나이즈, 모델 추론, 후처리를 한 줄로 묶어 주�
     # [{'label': 'POSITIVE', 'score': 0.99}]
 
 task 이름이 동작을 결정하며 sentiment-analysis, text-generation, ner, question-answering, summarization, fill-mask 등이 있습니다. model 인자로 특정 모델을 지정할 수 있고, 생략하면 task별 기본 모델을 씁니다. 입력은 문자열 하나 또는 리스트(배치)이고, 출력은 후처리까지 끝난 파이썬 객체(라벨과 점수, 생성된 문장 등)입니다. 내부적으로는 AutoTokenizer와 AutoModelFor 계열 클래스를 조합해 실행하며, pipeline은 그 위를 감싼 편의 계층입니다.
+
+주요 task를 짧게 정리하면 다음과 같습니다. 괄호 안은 주로 쓰이는 모델 계열입니다.
+
+- **sentiment-analysis** (encoder): 문장의 감정·극성을 하나의 라벨로 분류합니다. text-classification의 특수 사례로, 기본 모델이 긍정·부정 2-클래스라 이름이 따로 붙었을 뿐 스팸 판별이나 주제 분류도 같은 구조입니다.
+- **text-generation** (decoder): 프롬프트 뒤를 이어서 생성합니다. autoregressive 생성이라 max_new_tokens, temperature, top_p, do_sample 같은 디코딩 파라미터를 여기서 넘깁니다. 대화형 모델은 여기에 채팅 템플릿을 씌운 형태입니다.
+- **ner / token-classification** (encoder): 문장을 토큰 단위로 쪼갠 뒤 각 토큰이 인물·장소·기관 등 어떤 개체인지 태그를 붙입니다. B-PER(인물 시작), I-LOC(장소 내부)처럼 표시하며, aggregation_strategy를 "simple"로 주면 연속된 토큰을 하나의 개체로 묶어 줍니다. 품사 태깅(POS)도 같은 task입니다.
+- **question-answering** (encoder): 지문(context)에서 질문의 답에 해당하는 구간을 뽑아내는 추출형입니다. 답을 생성하는 것이 아니라 context 안에서 답의 시작·끝 위치를 예측해 그 부분 문자열을 반환합니다. context에 답이 없으면 엉뚱한 구간을 뽑을 수 있고, LLM이 답을 써 내는 생성형 QA와는 다릅니다.
+- **summarization** (encoder-decoder): 긴 글을 짧게 줄입니다. 인코더가 원문을 읽고 디코더가 요약을 생성하는 seq2seq이며, 원문 문장을 그대로 뽑는 추출 요약이 아니라 새 문장을 만드는 추상 요약(abstractive)입니다. min_length, max_length로 요약 길이를 조절합니다.
+- **fill-mask** (encoder): 문장의 [MASK] 자리에 들어갈 토큰을 예측합니다. BERT의 사전학습 목표인 MLM을 그대로 추론에 쓰는 것으로, [MASK] 위치의 최종 hidden을 어휘로 투영해 확률 상위 토큰들을 반환합니다. 모델마다 마스크 토큰 표기가 다릅니다([MASK], <mask>).
 
 추상화 계층으로 보면, pipeline이 가장 쉽고 제어가 적으며, 그 아래에 토크나이저와 모델을 직접 다루는 AutoClass가 있고, 가장 아래에 커스텀 head와 학습 루프를 직접 짜는 완전 제어 단계가 있습니다.
 
