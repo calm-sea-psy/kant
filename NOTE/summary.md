@@ -137,6 +137,31 @@
 - **Tree-structured**: 조건부 하이퍼파라미터(트리 구조 탐색공간)를 자연스럽게 다룸 — Gaussian Process 기반보다 유리
 - **TPE vs Grid/Random**: 과거 결과를 활용해 유망한 영역으로 수렴, pruning(조기 종료)도 지원
 
+### 텍스트 분류 문제 정의와 다중클래스 평가 · [상세 →](2-머신러닝.md#텍스트-분류-문제-정의와-다중클래스-평가)
+
+> 출처 TIL: 260908
+
+- **문제 정의**: 분류 단위(문장/문단/문서/문장쌍), 입력 형태·메타데이터, 토큰 길이 분포로 max_length·truncation 결정, "학습 입력 = 배포 입력"
+- **순서형(ordinal) 라벨**: 별점처럼 순서 있음. 분류로 풀면 순서 정보 소실 → 회귀 고려, 평가에 MAE 병행
+- **out-of-scope 클래스**: "기타/판단보류"를 두지 않으면 모델이 모든 입력을 억지 분류
+- **id2label/label2id 고정**: 처음에 정해 config에 저장, 순서 바뀌면 조용히 틀림
+- **라벨링 가이드라인**: 클래스 정의+예시, 경계 사례 tie-breaking, 일관성·drift 방지
+- **어노테이터 일치도**: Cohen's kappa 등, 낮으면 가이드라인이 모호하다는 신호. 골드셋(전문가 합의 정답)으로 평가·검증
+- **라벨 노이즈 = 성능 천장**: 모델은 라벨보다 정확해질 수 없음
+- **텍스트 결측**: 빈 문자열·None·mojibake·placeholder("N/A"), 라벨 표기 불일치(pos/Positive)
+- **중복 3종**: 완전 중복(exact, 이분법) / 근사 중복(near-dup, 임계값 필요, 편집거리·Jaccard·MinHash·임베딩) / 라벨 충돌 중복. 모두 split 전에 제거
+- **텍스트 타깃 누수**: 본문에 남은 "[SPAM]" 태그, 라벨 근거 메타데이터 혼입
+- **불균형이 학습을 망가뜨리는 방식**: 손실이 다수 클래스에 지배(gradient 쏠림), 결정 경계가 소수 쪽으로 밀림, 소수 클래스 확률 저평가(calibration)
+- **텍스트식 대응**: 클래스 가중치(compute_loss 오버라이드), focal loss, 텍스트 증강(역번역·동의어·LLM), macro-F1·balanced accuracy
+- **사전학습 모델은 불균형에 덜 취약**: 소수 클래스도 적은 예시로 학습 → 가중치+임계값+macro 지표면 충분한 경우 많음
+- **다중클래스 평균 3방식**: macro(클래스 동등), weighted(support 가중), micro(샘플 동등, 단일라벨에선 accuracy)
+- **per-class**: 지표 종류가 아니라 계산 단위. classification_report의 클래스별 줄이 원자료, macro/weighted는 요약
+- **Macro-F1**: 클래스별 F1의 단순 평균, 클래스 크기 무관. 다수 클래스에 묻힌 소수 클래스 붕괴를 드러냄
+- **Macro-F1 함정**: 한 클래스 미예측 시 1/K 통째로 깎임, 희소 클래스에 불안정
+- **다중클래스 혼동행렬**: 행=실제, 열=예측. 행 정규화=재현율, 열 정규화=정밀도. 큰 비대각 칸이 우선 수정 대상
+- **오분류 원인 분류**: 라벨 오류, 모호한 경계, 데이터 부족, shortcut 학습, 분포 밖(OOD), truncation, 전처리 손상
+- **비용 행렬·순서형 오류**: 오분류 비용이 균등하지 않음. 순서형은 대각선에서 먼 오류가 더 나쁨 → MAE 병행
+
 ## 딥러닝
 
 ### 딥러닝 기초와 PyTorch · [상세 →](3-딥러닝.md#딥러닝-기초와-pytorch)
@@ -436,6 +461,23 @@
 - **logits 축 의미**: classification은 (batch=샘플, num_labels=클래스) → argmax로 클래스. vocabulary는 (batch, seq_len=위치, vocab=토큰 점수) → argmax로 다음 토큰, 생성 시 마지막 위치만
 - **저장/재로드**: save_pretrained·from_pretrained. 모델과 토크나이저는 같은 경로에서 쌍으로 로드(vocab-embedding 인덱스 정합성)
 - **재현성 메타데이터**: revision(커밋 해시), transformers·torch 버전, torch_dtype, 랜덤 시드, safetensors, generation_config.json, 학습 시 TrainingArguments·데이터셋 버전
+
+### Hugging Face로 텍스트 분류 fine-tuning · [상세 →](4-LLM.md#hugging-face로-텍스트-분류-fine-tuning)
+
+> 출처 TIL: 260908
+
+- **datasets 라이브러리**: Dataset(Arrow 테이블, 메모리맵) + DatasetDict(split→Dataset 매핑). map/filter/rename_column 등은 모든 split에 일괄 적용
+- **split과 seed**: seed는 RNG 시작 상태 → 같으면 같은 셔플. 버전 바뀌면 달라질 수 있음, 분할 seed는 고정하되 학습 seed는 여러 개로 평균±std
+- **재현 가능한 split**: seed에 기대지 말고 행 id 목록·save_to_disk로 결과 자체를 저장 + 원본 해시·파라미터·버전 기록
+- **토큰화 2단계**: Dataset.map(batched=True)로 미리 토큰화·캐시(패딩 없음) → DataCollatorWithPadding이 배치마다 동적 패딩
+- **map이 열을 추가**: 넘긴 함수의 반환 dict 키가 새 열(input_ids, attention_mask). remove_columns로 원본 텍스트 제거 필수
+- **동적 패딩 vs max_length 패딩**: 배치별 최댓값(빠름, GPU 학습 기본) vs 전역 고정(TPU·compile·ONNX처럼 고정 shape 필요할 때)
+- **Trainer**: 학습 루프 대행(옵티마이저·역전파·평가·로깅·체크포인트·분산). transformers 클래스(PyTorch 기능 아님), 내부는 torch. pipeline < AutoClass < Trainer < 순수 루프
+- **TrainingArguments**: output_dir·save/eval/logging_strategy·learning_rate(분류 2e-5~5e-5)·num_train_epochs(2~4)·bf16·metric_for_best_model·load_best_model_at_end. 유효 배치 = per_device × grad_accum × GPU수
+- **fine-tuning 파이프라인**: 로드→split→토큰화→라벨 열명 맞춤→AutoModelForSequenceClassification(num_labels)→collator→compute_metrics→TrainingArguments→Trainer.train()→test 1회→save_model
+- **logging/eval/save 동작**: 주기마다 loss·lr 로깅 / eval 주기마다 검증셋 예측+compute_metrics(logits라 argmax 직접) / save 주기마다 재개용 체크포인트, save_model은 추론용 최소 파일
+- **학습 후 추론**: pipeline("text-classification", 저장경로)가 토크나이즈~id2label까지 처리 / 직접은 argmax+config.id2label / 다중레이블은 sigmoid+클래스별 임계값
+- **파인튜닝 도구 지형**: 작은 encoder 분류는 Trainer full fine-tune, 생성형 LLM은 peft(LoRA/QLoRA)+trl, 인프라 없이는 매니지드 API. 순서는 프롬프트→RAG→파인튜닝
 
 ### FreeToken · [상세 →](4-LLM.md#freetoken-대형-moe-모델을-소비자-하드웨어에서-굴리기)
 

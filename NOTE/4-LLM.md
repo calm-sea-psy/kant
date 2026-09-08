@@ -1,8 +1,8 @@
 # LLM
 
-자연어 처리 기초, 트랜스포머 아키텍처, 사전학습 언어모델(BERT·GPT), Hugging Face Transformers, MoE 서빙(FreeToken), 하네스 엔지니어링.
+자연어 처리 기초, 트랜스포머 아키텍처, 사전학습 언어모델(BERT·GPT), Hugging Face Transformers, 텍스트 분류 fine-tuning, MoE 서빙(FreeToken), 하네스 엔지니어링.
 
-> 출처 TIL: 260901, 260902, 260904, 260907
+> 출처 TIL: 260901, 260902, 260904, 260907, 260908
 
 ## 목차
 
@@ -56,6 +56,11 @@
     - [10. AutoModelForSequenceClassification과 AutoModelForCausalLM](#10-automodelforsequenceclassification과-automodelforcausallm)
     - [11. classification logits와 vocabulary logits의 축](#11-classification-logits와-vocabulary-logits의-축)
     - [12. 저장·재로드와 재현성 메타데이터](#12-저장재로드와-재현성-메타데이터)
+- [Hugging Face로 텍스트 분류 fine-tuning](#hugging-face로-텍스트-분류-fine-tuning)
+    - [1. DatasetDict와 재현 가능한 split](#1-datasetdict와-재현-가능한-split)
+    - [2. Dataset.map 토큰화와 DataCollatorWithPadding](#2-datasetmap-토큰화와-datacollatorwithpadding)
+    - [3. TrainingArguments와 Trainer](#3-trainingarguments와-trainer)
+    - [4. 학습된 모델의 추론과 파인튜닝 도구 선택](#4-학습된-모델의-추론과-파인튜닝-도구-선택)
 - [FreeToken (대형 MoE 모델을 소비자 하드웨어에서 굴리기)](#freetoken-대형-moe-모델을-소비자-하드웨어에서-굴리기)
     - [1. FreeToken이 풀려는 문제](#1-freetoken이-풀려는-문제)
     - [2. 대역폭 적응 실행](#2-대역폭-적응-실행)
@@ -560,6 +565,54 @@ vocabulary logits는 (batch, seq_len, vocab_size) 모양입니다. 0번 축은 �
 save_pretrained로 모델과 토크나이저를 각각 저장하고, from_pretrained로 다시 불러옵니다. 이때 모델과 토크나이저는 반드시 같은 경로에서 짝으로 로드해야 합니다. 토크나이저의 vocab과 모델의 임베딩 테이블 인덱스가 1대1로 대응하기 때문에, 짝이 어긋나면 오류 없이 조용히 틀린 결과가 나옵니다.
 
 재현성을 위해 함께 기록해 둘 메타데이터가 있습니다. revision(커밋 해시)은 Hub 모델이 갱신될 수 있으므로 시점을 고정하는 데 씁니다. transformers와 torch 버전은 버전 간 동작 차이 때문에 기록합니다. torch_dtype(fp32, fp16, bf16)은 정밀도에 따라 출력이 미세하게 달라지므로 명시합니다. 랜덤 시드는 초기화와 샘플링을 재현하기 위해 고정합니다. safetensors 형식은 pickle의 보안 문제를 피하고 결정적으로 로드되므로 권장합니다. generation_config.json은 생성 파라미터(temperature, top_p 등)를 고정합니다. 학습을 한 경우에는 TrainingArguments와 데이터셋 버전까지 남겨야 학습 과정 전체를 재현할 수 있습니다.
+
+
+## Hugging Face로 텍스트 분류 fine-tuning
+
+> 출처 TIL: 260908
+
+> 참고 · 문제 정의·라벨링·다중클래스 평가·데이터 점검은 [머신러닝 · 텍스트 분류 문제 정의와 다중클래스 평가](2-머신러닝.md#텍스트-분류-문제-정의와-다중클래스-평가) · 봉인 테스트와 데이터 누수는 [머신러닝 · 평가지표와 데이터 누수](2-머신러닝.md#평가지표와-데이터-누수)
+
+### 1. DatasetDict와 재현 가능한 split
+
+Hugging Face의 datasets 라이브러리는 두 객체를 씁니다. Dataset은 하나의 테이블로, 행이 샘플이고 열이 feature입니다. Apache Arrow 기반이라 컬럼 지향이고 메모리맵으로 읽어서 큰 데이터도 RAM을 넘기지 않습니다. DatasetDict는 split 이름에서 Dataset으로 가는 매핑으로, 파이썬 딕셔너리처럼 동작하며 보통 train, validation, test 세 키를 갖습니다. 열의 타입이 ClassLabel이면 라벨을 정수로 저장하고 정수와 문자열을 오가는 변환, id2label 매핑을 자동으로 제공합니다. map, filter, rename_column, cast_column, remove_columns, with_format 같은 메서드를 DatasetDict에 걸면 세 split 모두에 한 번에 적용됩니다.
+
+split을 나눌 때 seed의 역할을 이해해 둘 필요가 있습니다. split은 행을 무작위로 섞어서 나누는데, 난수 생성기의 시작 상태가 seed입니다. seed가 같으면 같은 난수열이 나오고, 같은 순서로 섞이고, 같은 split이 됩니다. train_test_split에 seed를 주거나 transformers.set_seed로 파이썬과 numpy와 torch의 난수를 한꺼번에 고정합니다. 주의할 점이 몇 가지 있습니다. seed는 무작위를 없애는 것이 아니라 고정된 무작위로 만드는 것이라 여전히 잘 섞입니다. 라이브러리나 버전이 바뀌면 같은 seed라도 결과가 달라질 수 있습니다. 무작위가 개입하는 지점이 여러 곳(분할, 모델 초기화, dropout, 데이터로더 셔플)이라, 분할 seed는 고정하되 최종 평가는 학습 seed를 여러 개로 돌려 평균과 표준편차를 봅니다. GPU의 비결정적 연산 때문에 seed를 고정해도 완전히 똑같이 재현되지 않을 수 있습니다.
+
+더 확실한 방법은 seed 재현에 기대지 않고 split 결과 자체를 저장하는 것입니다. 각 행의 id를 텍스트 파일로 남기거나, save_to_disk나 parquet로 고정합니다. 데이터가 크면 id 목록과 해시만 git에 커밋합니다. 함께 기록할 것은 원본 데이터의 해시와 행 수와 Hub revision, 분할 파라미터(test_size, seed, stratify 기준), 라이브러리 버전, 전처리 순서, 결과 분포(split별 행 수와 클래스별 개수)입니다.
+
+### 2. Dataset.map 토큰화와 DataCollatorWithPadding
+
+> 참고 · input_ids·attention_mask·token_type_ids의 의미는 [Hugging Face Transformers 기본 활용 · 7. AutoTokenizer와 AutoModel의 기본 출력](#7-autotokenizer와-automodel의-기본-출력)
+
+텍스트를 모델 입력으로 바꾸는 작업은 두 단계로 나뉩니다. 먼저 map으로 토큰화해서 디스크에 캐시하고, 그다음 배치를 만들 때마다 collator가 패딩합니다. 토큰화는 예시당 한 번만 하면 되니 미리 해 두고, 패딩은 한 배치에 어떤 예시들이 묶이느냐에 따라 달라지니 로드 시점에 합니다.
+
+map으로 토큰화할 때는 배치를 받아 토크나이저를 호출하는 함수를 넘깁니다.
+
+    def tokenize(batch):
+        return tokenizer(batch["text"], truncation=True, max_length=256)
+
+    tokenized = ds.map(tokenize, batched=True, remove_columns=["text"])
+
+map에 넘긴 함수가 딕셔너리를 반환하면 그 딕셔너리의 각 키가 Dataset의 새 열이 됩니다. 토크나이저 호출 결과가 바로 그 딕셔너리라, input_ids와 attention_mask(그리고 BERT 계열이면 token_type_ids) 열이 붙습니다. batched를 켜면 batch의 text가 문자열 리스트로 들어오고 빠른 토크나이저가 한 번에 처리해 수십 배 빨라집니다. truncation과 max_length는 상한을 넘는 입력을 자릅니다. remove_columns로 원본 텍스트 열을 지우지 않으면 나중에 텐서로 만들 때 에러가 납니다. 결과는 행마다 길이가 다른 input_ids이고, Arrow로 디스크에 캐시되어 같은 함수와 데이터면 다시 실행할 때 재사용됩니다. 이 단계에서 패딩을 하지 않는 이유는, 모든 행을 최대 길이까지 채우면 짧은 문장도 최대 길이만큼의 토큰을 갖게 되어 저장과 연산이 낭비되기 때문입니다. 패딩 토큰도 어텐션 계산에 들어갑니다.
+
+DataCollatorWithPadding은 데이터로더가 뽑은 예시 리스트를 받아, 그 배치 안에서 가장 긴 길이에 맞춰 패딩하고 텐서로 묶습니다. input_ids를 배치 최대 길이에 맞춰 패딩 토큰 id로 채우고, attention_mask도 확장하며(패딩 자리는 0), token_type_ids 같은 다른 시퀀스 필드도 패딩하고, 라벨은 패딩하지 않고(시퀀스 분류는 예시당 스칼라라서), 전부 torch 텐서로 스택합니다. 배치마다 길이가 달라지는 이런 방식을 동적 패딩(dynamic padding)이라 하며, 모든 배치를 전역 최대 길이로 고정하는 것보다 빠릅니다. 전처리 단계에서 한 번에 최대 길이로 패딩하는 방식은 TPU나 torch.compile이나 ONNX export처럼 고정된 shape이 필요할 때만 쓰고, 일반적인 GPU 학습에서는 동적 패딩이 기본입니다. 텐서코어 효율을 위해 길이를 8의 배수로 맞추는 옵션도 있습니다.
+
+### 3. TrainingArguments와 Trainer
+
+Trainer는 직접 짜야 할 학습 루프를 대신 돌려 주는 클래스입니다. 데이터로더 생성, epoch과 step 반복, 순전파에서 손실 계산과 역전파와 옵티마이저 스텝과 스케줄러 스텝과 gradient 초기화, gradient 누적과 clipping, 혼합 정밀도, 여러 GPU 분산 학습, 평가 루프(검증셋 예측을 모아 지표 함수 호출), 로깅, 체크포인트 저장과 재개, best 모델 추적, early stopping 같은 콜백을 전부 담당합니다. 모델이 라벨을 받으면 손실을 반환하는 Hugging Face 모델이면 그대로 동작하고, 커스텀 손실이 필요하면 손실 계산 메서드를 오버라이드합니다. 이것은 PyTorch의 기능이 아니라 transformers 라이브러리의 클래스이며, 내부적으로는 PyTorch의 옵티마이저와 데이터로더와 autograd를 씁니다. 추상화 계층으로 보면 pipeline과 AutoClass 아래, 순수 PyTorch 루프 위에 있습니다.
+
+TrainingArguments는 학습에 관한 모든 설정을 담는 객체입니다. 저장 관련으로 output_dir, 저장 주기(save_strategy), 보관 개수 제한(save_total_limit), 학습 끝에 best 체크포인트를 되돌릴지(load_best_model_at_end)가 있습니다. 평가 관련으로 평가 주기(eval_strategy), 평가 배치 크기, best 판정 기준 지표(metric_for_best_model)와 그 방향(greater_is_better)이 있습니다. 로깅 관련으로 로깅 주기와 대상(report_to로 TensorBoard나 W&B 지정)이 있습니다. 최적화 관련으로 학습률(분류 fine-tuning은 보통 2e-5에서 5e-5), 학습 배치 크기, gradient 누적 스텝, epoch 수(보통 2에서 4), weight decay, warmup 비율, 스케줄러 종류, gradient clipping 상한이 있습니다. 성능 관련으로 혼합 정밀도(Blackwell 계열이면 bf16), gradient checkpointing, 비슷한 길이끼리 묶기(group_by_length)가 있고, 재현성 관련으로 seed가 있습니다. 유효 배치 크기는 학습 배치 크기에 gradient 누적 스텝과 GPU 수를 곱한 값입니다.
+
+전체 파이프라인은 이렇게 이어집니다. 데이터를 DatasetDict로 로드하고, train과 validation과 test로 나누고(stratify와 seed 고정), 토크나이저를 로드하고, map으로 토큰화하고(원본 텍스트 열 제거), 라벨 열 이름을 모델이 손실 계산에 찾는 이름으로 맞추고, num_labels와 id2label와 label2id를 주어 분류 모델을 로드하고, collator를 만들고, 예측 logits를 받아 지표를 계산하는 함수를 정의하고, TrainingArguments를 설정하고, Trainer를 조립해 학습을 돌리고, 학습이 끝난 뒤 test로 딱 한 번 평가하고, 추론용으로 저장합니다.
+
+로깅과 평가와 저장의 동작은 이렇습니다. 로깅은 정해 둔 주기마다 학습 손실과 학습률과 epoch과 gradient norm을 콘솔과 로깅 대상에 출력하고, 평가 시점에는 검증 손실과 지표 함수 결과를 함께 기록합니다. 전체 로그 이력이 Trainer 안에 쌓여 나중에 직접 그래프로 그릴 수 있습니다. 평가는 정해 둔 주기마다 검증셋 전체로 예측한 뒤 지표 함수를 호출하는데, 지표 함수는 예측 logits와 정답 라벨을 받으므로 argmax는 직접 해야 합니다. best 판정 기준으로 지정한 지표가 best 체크포인트를 고르는 기준이 됩니다. 개발 중에는 검증셋만 보고, test는 학습이 끝난 뒤 한 번만 평가합니다. 저장은 정해 둔 주기마다 체크포인트 폴더를 만드는데, 여기에는 모델 가중치와 옵티마이저와 스케줄러 상태와 난수 상태와 학습 상태가 재개에 필요한 만큼 전부 들어갑니다. 보관 개수를 제한하면 오래된 체크포인트는 지워지고 best는 보호됩니다. load_best_model_at_end를 켜면 학습이 끝날 때 best 지표 체크포인트를 메모리로 되돌리는데, 저장 주기와 평가 주기가 같아야 동작합니다. 별도의 저장 메서드(save_model)는 추론에 필요한 최소 파일(설정, 가중치, 토크나이저)만 저장하고 옵티마이저 상태는 빼므로 배포용입니다. 체크포인트에서 학습을 이어서 재개할 수도 있습니다.
+
+### 4. 학습된 모델의 추론과 파인튜닝 도구 선택
+
+저장한 폴더에는 설정과 가중치와 토크나이저가 들어 있습니다. pipeline에 text-classification과 저장 경로를 주면 토크나이즈부터 모델 추론과 softmax와 id2label 매핑까지 한 번에 처리해서, 라벨이 "긍정"처럼 이름으로 나옵니다. 직접 하려면 토크나이저와 분류 모델을 로드해 logits에 argmax를 취한 뒤 설정의 id2label로 매핑합니다. 다중레이블이거나 임계값을 튜닝해야 하면 pipeline 대신 직접 로드해 sigmoid를 취하고 클래스별 임계값을 적용합니다. 배포 재현성을 위해 저장 전 예측과 다시 로드한 뒤의 예측이 같은지 확인합니다.
+
+파인튜닝을 언제 무엇으로 할지는 상황에 따라 다릅니다. 작은 encoder 분류 모델(BERT, RoBERTa, DeBERTa)은 transformers와 Trainer로 전체 파라미터를 fine-tuning하며, GPU 한 장으로 저렴하게 됩니다. 생성형 LLM(Llama, Qwen 등)의 파인튜닝은 보통 전체가 아니라 LoRA나 QLoRA 같은 방식을 peft와 trl의 SFTTrainer로, 또는 Axolotl이나 Llama-Factory나 Unsloth 같은 래퍼로 합니다. 전부 transformers 위에 얹혀 있습니다. 인프라를 두고 싶지 않으면 학습 데이터를 JSONL로 올려 제공사가 학습하는 매니지드 파인튜닝 API를 씁니다. LLM 애플리케이션에서 도구를 꺼내는 순서는 대체로 프롬프트, RAG, 파인튜닝이며, 큰 모델의 전체 fine-tuning은 앱 개발 실무에서 드물고, 작은 분류기의 파인튜닝이 요청 라우팅이나 유해성 필터나 의도 분류 같은 에이전트 부품으로 실제로 들어갑니다.
 
 
 ## FreeToken (대형 MoE 모델을 소비자 하드웨어에서 굴리기)
