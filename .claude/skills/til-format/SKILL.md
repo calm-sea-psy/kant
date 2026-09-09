@@ -1,6 +1,6 @@
 ---
 name: til-format
-description: This repo's house formatting convention for TIL/*.md daily study notes — plain-text sections (no markdown headers), 4-space bullets, indented fenced-less code, markdown tables and links, no LaTeX. Use this whenever writing a new TIL/YYMMDD.md file, editing or restructuring an existing one, or when the user says things like "TIL 형식 맞춰줘", "들여쓰기 통일해줘", "이 TIL 정리해줘", "표 정리해줘", or asks to check/fix formatting of anything under TIL/. Run scripts/til_lint.py to catch violations before finishing. Not for NOTE/ files (those use standard markdown) — see the til-to-note skill for the TIL→NOTE pipeline.
+description: This repo's house formatting convention for TIL/*.md daily study notes — plain-text sections (no markdown headers), 4-space bullets, indented fenced-less code, markdown tables and links, no LaTeX, English terms written as 한글(English) not phonetic transliteration. Use this whenever writing a new TIL/YYMMDD.md file, editing or restructuring an existing one, or when the user says things like "TIL 형식 맞춰줘", "들여쓰기 통일해줘", "이 TIL 정리해줘", "표 정리해줘", "용어 병기 맞춰줘", or asks to check/fix formatting of anything under TIL/. Run scripts/til_lint.py to catch violations before finishing. Not for NOTE/ files (those use standard markdown) — see the til-to-note skill for the TIL→NOTE pipeline.
 ---
 
 # TIL 서식 규칙
@@ -117,6 +117,16 @@ NOTE/ 교안은 반대로 존댓말 산문입니다(그건 `til-to-note` 스킬 
 - 이건 표와 함께 "평문 메모" 원칙의 유일한 예외입니다. 링크 문법 말고 다른 마크다운 장식(백틱·헤더 등)은 여전히 쓰지 않습니다.
 - 참조형 링크(`[1]: URL`)나 꺾쇠 자동링크(`<URL>`)는 쓰지 않습니다 — 인라인 `[라벨](URL)` 하나로 통일.
 
+### 12. 영어 용어는 "한글(English)" 로 병기, 음차 표기 금지
+
+영어 용어를 소리 나는 대로 한글로 옮기지 않습니다("베스트 프랙티스", "유즈케이스"). 뜻을 옮긴 한글 용어를 앞에 두고 괄호 안에 원어를 병기합니다. 같은 파일에서 다시 나오면 한글만 써도 됩니다.
+
+- "베스트 프랙티스" (X) → "모범 사례(best practice)" (O)
+- "유즈케이스" (X) → "사용 사례(use case)" (O)
+- 이미 자리 잡은 차용어(프롬프트, 모델, 토큰, 데이터셋)는 병기 없이 그대로. 애매하면 병기하는 쪽.
+- 영어 약어(LLM, PCA, LoRA)와 코드 식별자(nn.Linear, torch.load)는 원어 그대로.
+- "트레이드오프"처럼 이 저장소에서 이미 널리 쓰는 음차는 글쓴이 판단에 맡깁니다. 린트는 명백한 사례만 잡고, 나머지는 새 글을 쓸 때 위 원칙대로 병기하는 방향으로 굳혀 갑니다.
+
 ## 새 TIL 파일을 쓸 때
 
 파일명은 `TIL/YYMMDD.md` (예: `TIL/260827.md`). 위 규칙대로 작성하면 됩니다. 하루에 여러 주제를 다뤄도 한 파일에 `1. 2. 3. ...` 로 이어서 씁니다.
@@ -125,7 +135,7 @@ NOTE/ 교안은 반대로 존댓말 산문입니다(그건 `til-to-note` 스킬 
 
 1. 파일을 통째로 읽습니다.
 2. 규칙 위반을 찾아 고칩니다. **내용(문장·설명·의미)은 바꾸지 않습니다.** 명백한 오타(깨진 링크 파편, `$ㅇ` 같은 꼬리 문자, 용어 오타)만 함께 고치고, 무엇을 고쳤는지 보고에 남깁니다.
-3. 마크다운 헤더 → 번호 구조 / 펜스 코드 → 4칸 들여쓰기 / 평문 표 → 마크다운 표 / 맨 URL·`# https://...` → 마크다운 링크(규칙 11) / `- 소제목` → 평문 라벨 또는 `ㄱ)` / LaTeX 제거 / 들여쓰기 0·4·8 정규화 / 존댓말·해요체 → 평서체(규칙 10).
+3. 마크다운 헤더 → 번호 구조 / 펜스 코드 → 4칸 들여쓰기 / 평문 표 → 마크다운 표 / 맨 URL·`# https://...` → 마크다운 링크(규칙 11) / `- 소제목` → 평문 라벨 또는 `ㄱ)` / LaTeX 제거 / 들여쓰기 0·4·8 정규화 / 존댓말·해요체 → 평서체(규칙 10) / 영어 음차 → 한글(English) 병기(규칙 12).
 4. `python .claude/skills/til-format/scripts/til_lint.py TIL/YYMMDD.md` 로 검증합니다. 위반이 남아 있으면 다시 고칩니다.
 5. 이 파일이 이미 NOTE 에 반영돼 있었다면(`NOTE/.manifest.json` 에 존재), 형식만 바뀌었으므로 재동기화는 불필요합니다. 다만 매니페스트 해시가 어긋나 다음 `til-to-note` 스캔에서 "changed" 로 잡히므로, 형식만 고친 경우 다음 명령으로 해시를 갱신해 둡니다:
 
@@ -142,4 +152,4 @@ python .claude/skills/til-to-note/scripts/til_manifest.py update YYMMDD.md <도�
 ## 검증 스크립트
 
 `scripts/til_lint.py [파일...]` — 인자 없으면 `TIL/*.md` 전체.
-검사: 마크다운 헤더, 펜스 코드 블록, `$...$` LaTeX, 맨 앞 빈 줄, 구분선 없는 마크다운 표, 마커(`ㄱ)`/`a.`) 뒤 공백 누락, 표 앞뒤 빈 줄 누락, 존댓말·해요체 종결(규칙 10), 마크다운 링크가 아닌 맨 URL(규칙 11). 위반을 `파일:줄  설명` 형식으로 출력하고, 하나라도 있으면 종료 코드 1.
+검사: 마크다운 헤더, 펜스 코드 블록, `$...$` LaTeX, 맨 앞 빈 줄, 구분선 없는 마크다운 표, 마커(`ㄱ)`/`a.`) 뒤 공백 누락, 표 앞뒤 빈 줄 누락, 존댓말·해요체 종결(규칙 10), 마크다운 링크가 아닌 맨 URL(규칙 11), 영어 음차 표기(규칙 12 — 명백한 사례만 잡는 좁은 목록이며 전수 검사가 아님). 위반을 `파일:줄  설명` 형식으로 출력하고, 하나라도 있으면 종료 코드 1.

@@ -34,6 +34,15 @@ POLITE = re.compile(
     r'["\'”』」)\]]*[.?!…]*\s*$'
 )
 
+# 영어 음차 표기 — 뜻을 옮긴 "한글(English)" 병기로 써야 한다(규칙 12).
+# 여기서는 사용자가 명시적으로 지적한, 표준 한글 용어가 뚜렷한 사례만 강제한다.
+# "트레이드오프"처럼 이 저장소에서 이미 굳어진 표기는 넣지 않는다 — 그건 글쓴이 판단.
+# 새로 강제하고 싶은 사례가 생기면 여기 추가한다.
+TRANSLIT = re.compile(
+    r'베스트\s*프[랙렉]티스|'
+    r'유[즈스]\s*케이스|유[즈스]케이스'
+)
+
 
 def find_til_dir():
     d = os.getcwd()
@@ -84,6 +93,11 @@ def lint(path):
             if not (s >= 2 and l[s - 2:s] == ']('):
                 out.append((i, f'마크다운 링크가 아닌 맨 URL (규칙 11: [라벨](URL) 로): {stripped[:40]!r}'))
                 break
+
+        # 영어 음차 표기 (규칙 12)
+        mt = TRANSLIT.search(l)
+        if mt:
+            out.append((i, f'영어 음차 표기 (규칙 12: 한글(English) 병기로): {mt.group(0)!r}'))
 
         # 존댓말/해요체 종결
         if POLITE.search(l):
