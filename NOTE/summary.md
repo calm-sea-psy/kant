@@ -440,6 +440,34 @@
 - **생성 길이·종료**: max_new_tokens(프롬프트 제외 새 토큰 상한) 도달, EOS 토큰 생성, stop sequence 도달 중 하나로 멈춤
 - **BERT vs GPT**: encoder-only/decoder-only, 양방향/causal, 마스킹 복원/다음 토큰, 손실 15%만/모든 위치, 이해·분류/생성
 
+### 텍스트 생성과 디코딩 (자기회귀 루프·전략·채팅 메시지) · [상세 →](4-LLM.md#텍스트-생성과-디코딩-자기회귀-루프전략채팅-메시지)
+
+> 출처 TIL: 260910
+
+- **순전파 vs generate**: 순전파는 모델 1회 호출로 전 위치 로짓, 미분 가능(학습·손실·분류용). generate는 순전파를 자기회귀로 반복하는 루프, 토큰 선택에서 경사 끊겨 미분 불가
+- **분류는 순전파 1회로 충분**: generate 없이 라벨 토큰들의 로짓만 비교(verbalizer) → 빠르고 결정적, 형식 파싱 불필요
+- **자기회귀 원리**: 시퀀스 확률을 연쇄 법칙으로 분해, 각 토큰이 앞선 모든 토큰에 조건부. causal mask가 왼→오 순서 강제
+- **generate 루프 한 스텝**: 순전파 → 로짓 후처리(온도·페널티·top-k/p·EOS 억제) → softmax + 선택(argmax/샘플링) → append → 종료 체크 → 다시(새 토큰 1개만)
+- **generate가 얹는 것**: 디코딩 전략 / 종료 조건 / KV 캐시 / 로짓 후처리
+- **KV 캐시가 루프를 바꿈**: 순진하면 매 스텝 전체 재계산(O(n²)) → 캐시로 새 토큰만 통과. prefill(프롬프트 한 번에)=연산 병목, decode(토큰당)=메모리 대역폭 병목. 출력 N토큰 = prefill 1 + decode N−1
+- **디코딩 전략 2갈래**: 탐색(greedy·beam, 결정적, "가장 그럴듯한 하나") vs 샘플링(temperature·top-k·top-p, 비결정적, 다양성)
+- **greedy**: 매 스텝 argmax. 결정적·재현 쉬움, 근시안적(전체 최적 보장 없음), 반복 루프(degeneration) 취약
+- **sampling**: 확률 비례 무작위 추출. 비결정적(시드로 재현), 다양성, 반복 탈출, 꼬리 토큰 위험 → top-k/p로 억제
+- **greedy vs sampling 용도**: greedy/T=0은 분류·추출·짧은 QA·JSON·평가·코드, sampling(top-p 0.9~0.95, T 0.7~1.0)은 대화·창작·후보 여러 개
+- **temperature**: softmax 전 로짓을 T로 나눔. T<1 뾰족(보수), T>1 평평(과감), T→0 greedy, T→∞ 균등. 자르기 없이 올리면 쓰레기 토큰 튐
+- **top-k**: 상위 k개만 남기고 재정규화(k=1이면 greedy, 기본 40~50). k 고정이라 분포 모양에 둔감
+- **top-p (nucleus)**: 누적 확률 p까지의 최소 집합만. 후보 수가 분포에 적응적. 열린 생성 사실상 기본값(0.9~0.95). 변형 min-p, typical-p
+- **beam search**: 후보 시퀀스 k개(num_beams) 병렬 확장, 누적 로그확률 최대. greedy 근시안 완화, 번역·요약(BLEU/ROUGE)에 강함. 한계는 k배 비용·likelihood trap(밋밋)·결정적 → 현대 챗엔 거의 안 씀
+- **종료 조건**: EOS 토큰, max_new_tokens/max_length, stop 문자열(디토큰화 후 매칭), min_new_tokens(그 전까지 EOS 억제). max_length는 입력+출력 전체, max_new_tokens는 새 토큰만
+- **배치 생성**: 시퀀스별 EOS 시점 달라 마스킹·left padding, 연속 배칭(빈 슬롯에 새 요청 즉시 투입), 추측 디코딩(초안 모델이 여러 토큰 미리 뽑고 본 모델이 1회 검증)
+- **deterministic output**: greedy·beam은 결정적, sampling은 시드 고정 시 재현. 평가·디버깅·캐싱에 필요. T=0도 완전 보장 아님(부동소수점 tie-break, MoE 라우팅, HW·버전 차이)
+- **generation config**: 생성 파라미터 묶음(HF generation_config.json / API 파라미터). do_sample·num_beams·temperature·top_k·top_p·repetition_penalty·max_new_tokens·eos·seed. 모델 카드에 동봉, 평가 시 명시 필수. base 모델은 부실
+- **diversity vs coherence**: 낮은 T·작은 k/p → 일관·안전하나 밋밋·반복 / 높은 T·큰 k/p → 다양하나 문맥 이탈·환각. QA·코드 T 0~0.3, 대화 T 0.7, 창작 T 0.9~1.2. top-p·min-p가 이 상충을 완화
+- **채팅 템플릿(chat template)**: 메시지 목록 → 모델이 학습한 토큰 시퀀스 문자열로 변환하는 규칙(모델마다 다름). 특수 토큰으로 역할 경계, 생성 프롬프트(add_generation_prompt). tokenizer_config.json의 chat_template(Jinja2), 항상 apply_chat_template — 수동 조립 금지
+- **템플릿 실패**: 수동 조립·BOS 중복·학습/추론 템플릿 불일치·base에 템플릿 없음 → 지시 무시, 서두 삽입, 형식 준수율 급락, 종료 실패
+- **chat message 역할**: role+content 리스트. system(정체성·규칙·형식, 안 보임, 우선순위 높음, 일부 모델은 첫 user에 합침) / user(매 턴, 마지막이 답할 것, 과제 입력) / assistant(모델 응답, 히스토리로 재포함=stateless, SFT 손실은 여기만)
+- **왜 역할 형식인가**: 명령어 튜닝·선호 최적화가 이 구조로 학습 → 지시-응답·안전 정렬·멀티턴 문맥이 동작
+
 ### Hugging Face Transformers · [상세 →](4-LLM.md#hugging-face-transformers-기본-활용)
 
 > 출처 TIL: 260907
