@@ -143,7 +143,7 @@ NOTE/ 교안은 반대로 존댓말 산문입니다(그건 `til-to-note` 스킬 
 python .claude/skills/til-to-note/scripts/til_manifest.py update YYMMDD.md <도메인>
 ```
 
-`<도메인>` 은 `NOTE/.manifest.json` 에서 그 파일의 기존 `group` 값(`1-수학` / `2-머신러닝` / `3-딥러닝` / `4-LLM` 중 하나)을 그대로 씁니다. NOTE 교안은 이 네 개의 도메인 파일(`NOTE/1-수학.md` 등)과 크로스도메인 인덱스 `NOTE/summary.md` 로 이루어집니다 — 자세한 구조는 `til-to-note` 스킬 참고.
+`<도메인>` 은 `NOTE/.manifest.json` 에서 그 파일의 기존 `group` 값(`1-수학` / `2-머신러닝` / `3-딥러닝` / `4-LLM` / `5-웹개발` 중 하나)을 그대로 씁니다. NOTE 교안은 이 다섯 개의 도메인 파일(`NOTE/1-수학.md` 등)과 크로스도메인 인덱스 `NOTE/summary.md` 로 이루어집니다 — 자세한 구조는 `til-to-note` 스킬 참고.
 
 ## 여러 파일을 한꺼번에 정리할 때
 

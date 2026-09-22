@@ -1,18 +1,18 @@
 ---
 name: til-to-note
-description: Incrementally turns this repo's TIL/*.md daily notes into topic-grouped study material under NOTE/. Content lives in four domain files — NOTE/1-수학.md, NOTE/2-머신러닝.md, NOTE/3-딥러닝.md, NOTE/4-LLM.md — each a fully-written prose explanation (no math formulas/LaTeX; English terms written as 한글(English), not phonetic transliteration) with a clickable table of contents. NOTE/summary.md is a single cross-domain keyword index that links into those files. Use this whenever the user asks to update, sync, regenerate, or build the NOTE folder from TIL, says things like "TIL 정리해줘", "노트 업데이트해줘", "교안 만들어줘/갱신해줘", "오늘 TIL을 노트에 반영해줘", or runs this skill with no arguments expecting a full incremental scan. Always check NOTE/.manifest.json and the existing NOTE files first — never regenerate everything from scratch; this skill's entire point is incremental, non-destructive updates.
+description: Incrementally turns this repo's TIL/*.md daily notes into topic-grouped study material under NOTE/. Content lives in five domain files — NOTE/1-수학.md, NOTE/2-머신러닝.md, NOTE/3-딥러닝.md, NOTE/4-LLM.md, NOTE/5-웹개발.md — each a fully-written prose explanation (no math formulas/LaTeX; English terms written as 한글(English), not phonetic transliteration) with a clickable table of contents. NOTE/summary.md is a single cross-domain keyword index that links into those files. Use this whenever the user asks to update, sync, regenerate, or build the NOTE folder from TIL, says things like "TIL 정리해줘", "노트 업데이트해줘", "교안 만들어줘/갱신해줘", "오늘 TIL을 노트에 반영해줘", or runs this skill with no arguments expecting a full incremental scan. Always check NOTE/.manifest.json and the existing NOTE files first — never regenerate everything from scratch; this skill's entire point is incremental, non-destructive updates.
 ---
 
 # TIL → NOTE 교안 증분 생성
 
 ## 이 스킬이 하는 일과 하지 않는 일
 
-TIL/*.md(하루치 학습 키워드 정리)를 네 개의 도메인으로 묶어 교안으로 재구성합니다.
+TIL/*.md(하루치 학습 키워드 정리)를 다섯 개의 도메인으로 묶어 교안으로 재구성합니다.
 
-- `NOTE/1-수학.md` · `NOTE/2-머신러닝.md` · `NOTE/3-딥러닝.md` · `NOTE/4-LLM.md` — 도메인별 상세 교안. 개념·배경·예시를 문단으로 풀어쓴 설명이며, 수식/LaTeX 없이 전부 말로 풀어씁니다. 이해를 돕는 Python 코드 스니펫은 유지 가능. 각 파일의 구조는 아래 "도메인 파일 구조" 참고.
-- `NOTE/summary.md` — 네 도메인 전체를 한 파일에 담은 키워드 인덱스. 매일 위에서 아래로 훑어보며 리마인드하는 용도. `## 도메인` 아래에 `### 하위주제 · [상세 →](파일#anchor)` 블록들이 있고, 각 블록은 `- **키워드**: 한두 줄 설명` 불릿 목록입니다. 코드 없음.
+- `NOTE/1-수학.md` · `NOTE/2-머신러닝.md` · `NOTE/3-딥러닝.md` · `NOTE/4-LLM.md` · `NOTE/5-웹개발.md` — 도메인별 상세 교안. 개념·배경·예시를 문단으로 풀어쓴 설명이며, 수식/LaTeX 없이 전부 말로 풀어씁니다. 이해를 돕는 Python 코드 스니펫은 유지 가능. 각 파일의 구조는 아래 "도메인 파일 구조" 참고.
+- `NOTE/summary.md` — 다섯 도메인 전체를 한 파일에 담은 키워드 인덱스. 매일 위에서 아래로 훑어보며 리마인드하는 용도. `## 도메인` 아래에 `### 하위주제 · [상세 →](파일#anchor)` 블록들이 있고, 각 블록은 `- **키워드**: 한두 줄 설명` 불릿 목록입니다. 코드 없음.
 
-네 도메인은 고정입니다. TIL 내용은 반드시 이 중 하나에 들어갑니다.
+다섯 도메인은 고정입니다. TIL 내용은 반드시 이 중 하나에 들어갑니다.
 
 | 도메인 | 파일 | 범위 |
 |---|---|---|
@@ -20,6 +20,7 @@ TIL/*.md(하루치 학습 키워드 정리)를 네 개의 도메인으로 묶어
 | 머신러닝 | 2-머신러닝.md | 지도·비지도 기초 모델, 앙상블, 편향-분산·규제, 평가지표·데이터 누수 |
 | 딥러닝 | 3-딥러닝.md | 딥러닝 기초·PyTorch, CNN, RNN·LSTM, 트랜스포머 수학(어텐션 shape·미분·역전파) |
 | LLM | 4-LLM.md | NLP 기초, 트랜스포머 아키텍처, 사전학습 LM, Hugging Face, 서빙·하네스 |
+| 웹개발 | 5-웹개발.md | HTTP 요청 구조·메서드·상태 코드, REST API 설계 등 웹·백엔드 개발 기초 |
 
 **절대 전체를 다시 쓰지 않습니다.** TIL은 매일 추가되는 데이터이므로, 이 스킬은 "지금까지 반영 안 된 부분만 찾아서 기존 문서에 이어 붙이거나, 바뀐 부분만 고치는" 증분 작업입니다. 이미 처리된 내용을 다시 훑어 전체 파일을 재작성하면, 사용자가 반영 이후 직접 다듬었을 수도 있는 부분을 조용히 덮어써버립니다 — 그래서 "무엇이 이미 반영됐는가"를 정확히 추적하는 것이 이 스킬의 핵심입니다.
 
@@ -59,7 +60,7 @@ TIL/*.md(하루치 학습 키워드 정리)를 네 개의 도메인으로 묶어
 
 ## 왜 매니페스트가 필요한가
 
-TIL 파일이 "새로 추가됐는지" 또는 "내용이 바뀌었는지"를 매번 눈으로 비교하는 것은 비용이 크고 실수하기 쉽습니다. 그래서 `NOTE/.manifest.json`에 각 TIL 파일의 마지막 반영 시점 해시와, 그 내용이 어느 도메인으로 들어갔는지(`group` = `1-수학` / `2-머신러닝` / `3-딥러닝` / `4-LLM`)를 기록해둡니다. "해시가 같다 = 이 TIL은 이미 완전히 반영됨"을 기계적으로 판단합니다. 이 비교는 `scripts/til_manifest.py`가 처리합니다 — "어느 도메인·하위주제에 속하는가", "어떻게 풀어 쓸 것인가"는 모델이 판단합니다.
+TIL 파일이 "새로 추가됐는지" 또는 "내용이 바뀌었는지"를 매번 눈으로 비교하는 것은 비용이 크고 실수하기 쉽습니다. 그래서 `NOTE/.manifest.json`에 각 TIL 파일의 마지막 반영 시점 해시와, 그 내용이 어느 도메인으로 들어갔는지(`group` = `1-수학` / `2-머신러닝` / `3-딥러닝` / `4-LLM` / `5-웹개발`)를 기록해둡니다. "해시가 같다 = 이 TIL은 이미 완전히 반영됨"을 기계적으로 판단합니다. 이 비교는 `scripts/til_manifest.py`가 처리합니다 — "어느 도메인·하위주제에 속하는가", "어떻게 풀어 쓸 것인가"는 모델이 판단합니다.
 
 ## 절차
 
@@ -81,7 +82,7 @@ python .claude/skills/til-to-note/scripts/til_manifest.py scan
 
 ### 3. 새/변경된 TIL마다 분류하고 반영
 
-각 TIL 파일을 전체 읽고 다룬 주제를 봅니다. 네 도메인 중 하나로 분류합니다(위 표 기준). 한 TIL이 여러 도메인에 걸치면 절 단위로 쪼개 각 도메인에 나눠 반영합니다.
+각 TIL 파일을 전체 읽고 다룬 주제를 봅니다. 다섯 도메인 중 하나로 분류합니다(위 표 기준). 한 TIL이 여러 도메인에 걸치면 절 단위로 쪼개 각 도메인에 나눠 반영합니다.
 
 **기존 하위주제에 붙는 경우**: 도메인 파일에서 그 `## 하위주제`를 찾아, TIL의 각 절을 `### N. 제목`으로 이어 붙입니다(절 번호는 그 하위주제의 마지막 번호 다음). `NOTE/summary.md`에서 같은 `### 하위주제 · [상세 →]` 블록을 찾아 불릿을 이어 붙입니다. 두 곳의 `> 출처 TIL`에 새 날짜를 추가합니다. 기존 절·불릿은 건드리지 않습니다.
 
@@ -89,7 +90,7 @@ python .claude/skills/til-to-note/scripts/til_manifest.py scan
 
 **TIL이 바뀐 경우(`changed`)**: 이전 버전과 비교할 방법이 없으므로(해시만 저장), 현재 TIL 전체를 기준으로 도메인 파일에서 제목이 같거나 매우 유사한 `###` 절과 summary.md의 대응 불릿을 찾아 그 부분만 고칩니다. 못 찾으면 새로 추가합니다. 절대 파일 전체를 지우고 새로 쓰지 않습니다.
 
-**다섯 번째 도메인이 필요해 보이는 경우**: 네 도메인 중 어디에도 안 맞는 내용은 드뭅니다. 대화형 세션이면 새 도메인 파일을 만들지 사용자에게 짧게 물어봅니다. 자동 실행이면 가장 가까운 도메인에 새 하위주제로 넣고, 결과 보고에 "이 내용은 도메인 X에 임시로 넣었으니 확인 바람"이라고 남깁니다.
+**새 도메인이 필요해 보이는 경우**: 기존 도메인 어디에도 안 맞는 내용은 드뭅니다. 대화형 세션이면 새 도메인 파일을 만들지 사용자에게 짧게 물어봅니다. 자동 실행이면 가장 가까운 도메인에 새 하위주제로 넣고, 결과 보고에 "이 내용은 도메인 X에 임시로 넣었으니 확인 바람"이라고 남깁니다.
 
 ### 4. 목차 재생성
 
@@ -102,7 +103,7 @@ python .claude/skills/til-to-note/scripts/regen_toc.py NOTE/3-딥러닝.md
 여러 파일을 손댔으면 다 나열합니다. 마지막에 `--check`로 전체 확인:
 
 ```bash
-python .claude/skills/til-to-note/scripts/regen_toc.py --check NOTE/1-수학.md NOTE/2-머신러닝.md NOTE/3-딥러닝.md NOTE/4-LLM.md
+python .claude/skills/til-to-note/scripts/regen_toc.py --check NOTE/1-수학.md NOTE/2-머신러닝.md NOTE/3-딥러닝.md NOTE/4-LLM.md NOTE/5-웹개발.md
 ```
 
 `## 목차`의 anchor와 `NOTE/summary.md`의 `[상세 →]` anchor, 그리고 `> 참고` 링크는 모두 이 규칙으로 나온 값이어야 합니다.
@@ -111,7 +112,7 @@ python .claude/skills/til-to-note/scripts/regen_toc.py --check NOTE/1-수학.md 
 
 - **수식/LaTeX 금지**: 공식을 그대로 옮기지 말고 전부 말로 풀어씁니다. `det(A) = a×d - b×c` → "행렬식은 대각선 방향 값들의 곱에서 반대 대각선 방향 값들의 곱을 뺀 값입니다".
 - **코드**: 도메인 파일에는 이해를 돕는 Python 코드 스니펫(펜스 코드 블록)을 유지해도 됩니다. summary.md에는 코드를 넣지 않습니다.
-- **summary.md 스타일**: `- **키워드**: 한두 줄 설명` 불릿. 상세본 없이도 그 자체로 훑을 수 있게 씁니다. `## 도메인` 순서(수학 → 머신러닝 → 딥러닝 → LLM)와 그 안의 `### 하위주제` 순서는 도메인 파일의 하위주제 순서와 같게 유지합니다.
+- **summary.md 스타일**: `- **키워드**: 한두 줄 설명` 불릿. 상세본 없이도 그 자체로 훑을 수 있게 씁니다. `## 도메인` 순서(수학 → 머신러닝 → 딥러닝 → LLM → 웹개발)와 그 안의 `### 하위주제` 순서는 도메인 파일의 하위주제 순서와 같게 유지합니다.
 - **도메인 파일 스타일**: `###` 절마다 하나의 개념. 배경·정의·예시·실무 함의를 문단으로. 기존 문체(존댓말, 문단 중심)를 따릅니다.
 - **용어 표기**: 영어 용어를 소리 나는 대로 한글로 옮기지 않습니다("베스트 프랙티스" → "모범 사례(best practice)"). 첫 등장 시 `한글 용어(English)` 로 병기하고 이후에는 한글만 씁니다. 굳어진 차용어(프롬프트·모델·토큰)와 약어(LLM·PCA·LoRA), 코드 식별자는 예외. TIL 서식 규칙 12와 같은 원칙입니다.
 - **출처 표기**: 도메인 파일 맨 위 `> 출처 TIL`(도메인 전체 합집합), 각 `## 하위주제` 아래 `> 출처 TIL`(그 하위주제 것), `NOTE/summary.md`의 각 `### 하위주제` 블록 아래 `> 출처 TIL` — 세 곳을 새 날짜가 들어올 때마다 갱신합니다.
@@ -124,7 +125,7 @@ python .claude/skills/til-to-note/scripts/regen_toc.py --check NOTE/1-수학.md 
 python .claude/skills/til-to-note/scripts/til_manifest.py update 260815.md 2-머신러닝
 ```
 
-`group`은 `1-수학` / `2-머신러닝` / `3-딥러닝` / `4-LLM` 중 하나입니다. 한 TIL을 여러 도메인에 나눠 반영했으면 가장 비중이 큰 도메인을 기록하고, 결과 보고에 "이 TIL은 N개 도메인에 나눠 반영됨"이라고 남깁니다.
+`group`은 `1-수학` / `2-머신러닝` / `3-딥러닝` / `4-LLM` / `5-웹개발` 중 하나입니다. 한 TIL을 여러 도메인에 나눠 반영했으면 가장 비중이 큰 도메인을 기록하고, 결과 보고에 "이 TIL은 N개 도메인에 나눠 반영됨"이라고 남깁니다.
 
 ### 7. 결과 보고
 

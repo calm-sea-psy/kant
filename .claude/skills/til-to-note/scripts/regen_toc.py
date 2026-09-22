@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Regenerate the "## 목차" block of a NOTE domain file from its headings.
 
-NOTE domain files (NOTE/1-수학.md, 2-머신러닝.md, 3-딥러닝.md, 4-LLM.md) carry a
+NOTE domain files (NOTE/1-수학.md, 2-머신러닝.md, 3-딥러닝.md, 4-LLM.md, 5-웹개발.md) carry a
 table of contents near the top:
 
     ## 목차
@@ -20,7 +20,7 @@ are listed; deeper headings and the "## 목차" heading itself are skipped.
 
 Usage:
     python .claude/skills/til-to-note/scripts/regen_toc.py NOTE/3-딥러닝.md
-    python .claude/skills/til-to-note/scripts/regen_toc.py --check NOTE/1-수학.md NOTE/2-머신러닝.md NOTE/3-딥러닝.md NOTE/4-LLM.md
+    python .claude/skills/til-to-note/scripts/regen_toc.py --check NOTE/1-수학.md NOTE/2-머신러닝.md NOTE/3-딥러닝.md NOTE/4-LLM.md NOTE/5-웹개발.md
 
 --check exits 1 (and prints which files are stale) without modifying anything.
 Without --check, files are rewritten in place.
