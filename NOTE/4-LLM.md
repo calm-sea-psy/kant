@@ -1,8 +1,8 @@
 # LLM
 
-자연어 처리 기초, 트랜스포머 아키텍처, 사전학습 언어모델(BERT·GPT), 텍스트 생성·디코딩, Hugging Face Transformers, 텍스트 분류 fine-tuning, 프롬프트·PEFT·파인튜닝 적응 방법, MoE 서빙(FreeToken), 하네스 엔지니어링.
+자연어 처리 기초, 트랜스포머 아키텍처, 사전학습 언어모델(BERT·GPT), 텍스트 생성·디코딩, Hugging Face Transformers, 텍스트 분류 fine-tuning, 프롬프트·PEFT·파인튜닝 적응 방법, MoE 서빙(FreeToken), 하네스 엔지니어링, LangChain 기초.
 
-> 출처 TIL: 260901, 260902, 260904, 260907, 260908, 260909, 260910, 260911, 260921
+> 출처 TIL: 260901, 260902, 260904, 260907, 260908, 260909, 260910, 260911, 260921, 260929
 
 ## 목차
 
@@ -101,6 +101,15 @@
     - [3. 주요 작업 항목](#3-주요-작업-항목)
     - [4. 프롬프트·컨텍스트·하네스 엔지니어링의 범위](#4-프롬프트컨텍스트하네스-엔지니어링의-범위)
     - [5. Tool Calling과 에이전트 파이프라인](#5-tool-calling과-에이전트-파이프라인)
+- [LangChain 기초 (Prompt·Model·Parser·Runnable)](#langchain-기초-promptmodelparserrunnable)
+    - [1. LangChain이란 무엇인가](#1-langchain이란-무엇인가)
+    - [2. Prompt → Model → Parser 체인](#2-prompt--model--parser-체인)
+    - [3. LangChain 패키지 구조 — langchain-core, 연동 패키지, langchain](#3-langchain-패키지-구조--langchain-core-연동-패키지-langchain)
+    - [4. PromptTemplate과 ChatPromptTemplate](#4-prompttemplate과-chatprompttemplate)
+    - [5. ChatModel](#5-chatmodel)
+    - [6. 도구 호출과 구조화된 출력 — bind_tools와 with_structured_output](#6-도구-호출과-구조화된-출력--bind_tools와-with_structured_output)
+    - [7. Runnable — 공통 인터페이스](#7-runnable--공통-인터페이스)
+    - [8. Runnable 조합 — Sequence, Parallel, Lambda, Passthrough](#8-runnable-조합--sequence-parallel-lambda-passthrough)
 
 ---
 
@@ -1179,3 +1188,212 @@ Decode 단계에서는 인접한 토큰들이 같은 expert를 자주 다시 쓰
 설계할 때 신경 쓰는 지점은 다섯 가지입니다. 도구 설계는 이름·설명문·스키마 품질이 호출 정확도를 좌우하고, 도구가 많으면 헷갈리므로 묶거나 지연 로딩합니다. 호출 형식 강제는 도구 인자가 스키마를 정확히 따라야 파싱이 되므로, 문법 제약 디코딩(grammar-constrained decoding)으로 애초에 스키마 밖 토큰을 못 뽑게 막는 경우가 많고, 이게 깨지면 형식 준수율이 떨어지는 원인이 됩니다. 병렬 vs 순차 호출은 병렬이면 지연을 줄이지만 도구 간 의존성(A의 결과가 B의 입력이 되는 경우) 처리가 복잡해집니다. 오류 처리는 도구 실행이 실패하면 에러 메시지를 그대로 tool 결과로 넣어 모델이 스스로 재시도하거나 수정하게 하는 패턴이 일반적입니다. 종료 조건은 루프가 무한히 돌지 않도록 최대 반복 횟수나 타임아웃을 하네스 쪽에서 강제합니다.
 
 Tool calling 자체는 모델이 구조화된 요청을 출력하는 능력이고, 그 요청을 실행하고 결과를 다시 먹여 반복하는 것이 파이프라인(에이전트 루프)입니다. 능력은 모델(학습으로 내재화)에 있고 루프는 하네스(애플리케이션 코드)에 있다는 분리가 핵심입니다.
+
+## LangChain 기초 (Prompt·Model·Parser·Runnable)
+
+> 출처 TIL: 260929
+
+### 1. LangChain이란 무엇인가
+
+LangChain은 LLM 애플리케이션을 만들 때 반복되는 작업을 부품으로 표준화한 프레임워크입니다. LLM을 직접 호출하면 사용자 입력으로 프롬프트 문자열을 만들고, 모델 API(OpenAI, Ollama 등)를 호출하고, 응답 텍스트에서 필요한 부분을 꺼내거나 JSON으로 파싱하는 코드를 매번 새로 짜게 됩니다. LangChain은 이 단계들을 같은 인터페이스를 가진 부품으로 만들어, 레고처럼 이어 붙일 수 있게 해줍니다.
+
+이를 가능하게 하는 두 가지 개념이 있습니다. 하나는 Runnable로, 모든 부품이 따르는 공통 규약입니다. 어떤 부품이든 invoke()(1건 실행), stream()(스트리밍), batch()(여러 건 실행)를 똑같이 쓸 수 있습니다. 다른 하나는 LCEL(LangChain Expression Language)로, `|` 연산자로 부품을 연결하는 문법입니다. 앞 부품의 출력이 다음 부품의 입력으로 넘어가며, 유닉스 파이프(`cat file | grep x`)와 같은 개념입니다.
+
+```python
+chain = prompt | model | parser
+result = chain.invoke({"topic": "고양이"})
+```
+
+이 한 줄이 가장 기본이 되는 Prompt → Model → Parser 체인입니다.
+
+### 2. Prompt → Model → Parser 체인
+
+> 참고 · system/user/assistant 역할 자체의 의미는 [9. 채팅 메시지 역할 — system, user, assistant](#9-채팅-메시지-역할--system-user-assistant)
+
+Prompt 단계는 입력을 모델이 읽을 메시지로 바꿉니다. 변수가 들어갈 자리를 비워 둔 템플릿에 사용자 입력을 채워서, 모델에 보낼 메시지 목록을 만듭니다. 입력은 `{"role": "수학 선생님", "question": "미분이 뭐야?"}` 같은 딕셔너리이고, 출력은 PromptValue라는 객체인데 실제로는 SystemMessage와 HumanMessage로 이루어진 메시지 목록입니다. 프롬프트를 코드 로직과 분리해 재사용하고 버전을 관리할 수 있고, system/human/ai 같은 역할(role) 구분을 자동으로 처리하며, few-shot 예시나 대화 기록도 템플릿 안에 끼워 넣을 수 있습니다.
+
+```python
+from langchain_core.prompts import ChatPromptTemplate
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "너는 {role}이다. 한국어로 짧게 답해라."),
+    ("human", "{question}"),
+])
+```
+
+Model 단계는 실제 LLM을 호출합니다. LangChain은 여러 제공자를 같은 인터페이스로 감싸 두었기 때문에, 로컬 Ollama에서 클라우드 API로 바꿀 때 모델을 만드는 한 줄만 고치면 체인의 나머지 코드는 그대로 둘 수 있습니다. 여러 모델을 비교하는 테스트 환경을 만들 때 특히 유용합니다. 입력은 Prompt 단계가 만든 메시지 목록이고, 출력은 AIMessage 객체입니다. AIMessage에는 답변 텍스트(`.content`)와 함께 토큰 사용량, 도구 호출 정보 같은 메타데이터가 들어 있습니다. temperature 같은 생성 파라미터, 재시도, 스트리밍도 이 단계 안에서 처리합니다.
+
+Parser 단계는 모델의 응답을 프로그램이 쓸 수 있는 형태로 바꿉니다. AIMessage는 사람이 읽기에는 괜찮지만 코드에서 바로 쓰기는 불편합니다. 파서 다음에 오는 코드(DB 저장, 다음 체인, UI)는 정해진 형식을 기대하므로, Parser가 모델의 자유로운 텍스트와 형식을 요구하는 프로그램 사이를 연결합니다. 대표적으로 텍스트만 꺼내는 StrOutputParser(가장 흔함), JSON 응답을 딕셔너리로 바꾸는 JsonOutputParser, 필드와 타입까지 검증하는 PydanticOutputParser가 있습니다. 일부 파서는 get_format_instructions()를 제공하는데, 이것을 프롬프트에 넣으면 "이런 JSON 형식으로 답해라"라는 지시가 자동으로 만들어집니다. 그래서 Parser와 Prompt는 짝을 이룹니다.
+
+요즘은 model.with_structured_output(MySchema)처럼 모델의 도구 호출이나 JSON 모드를 이용해 구조화된 출력을 직접 받는 방식도 많이 씁니다. 텍스트를 받은 뒤 사후에 파싱하는 대신 모델 단계에서 형식을 강제하므로 더 안정적이지만, 개념상 역할은 Parser와 같습니다.
+
+전체 흐름은 딕셔너리 입력이 Prompt를 거쳐 메시지 목록이 되고, Model을 거쳐 AIMessage가 되고, Parser를 거쳐 코드가 쓰기 좋은 문자열이나 딕셔너리가 되는 순서입니다. 한마디로 Prompt는 "무엇을 물을지", Model은 "누가 답할지", Parser는 "답을 어떤 모양으로 받을지"를 담당합니다. 세 단계가 모두 Runnable이라서 chain.stream(...)으로 체인 전체를 스트리밍할 수 있고, 나중에 RAG를 할 때는 앞에 Retriever를, 에이전트를 만들 때는 Tool을 같은 방식으로 `|`로 이어 붙이면 됩니다.
+
+### 3. LangChain 패키지 구조 — langchain-core, 연동 패키지, langchain
+
+초기 LangChain은 langchain 패키지 하나에 핵심 개념, OpenAI·Anthropic을 비롯한 수백 개의 외부 서비스 연동, 체인과 에이전트까지 전부 들어 있었습니다. 그러다 보니 OpenAI 하나만 쓰려 해도 무거운 패키지 전체를 설치해야 했고, 외부 서비스 SDK가 바뀔 때마다 전체 패키지를 다시 배포해야 해서 버전 충돌이 잦았습니다. 그래서 "뼈대(core)", "연동(integration)", "고수준 기능(langchain)"의 세 계층으로 분리했습니다. 모든 패키지는 맨 아래의 core에 의존합니다.
+
+langchain-core는 LangChain 생태계 전체가 따르는 추상 인터페이스와 기본 부품을 정의합니다. Runnable과 LCEL, 메시지(SystemMessage, HumanMessage, AIMessage, ToolMessage), 프롬프트(ChatPromptTemplate, MessagesPlaceholder), 출력 파서(StrOutputParser 등), 추상 클래스(BaseChatModel, Embeddings, BaseRetriever, BaseTool)가 여기에 있습니다. 특정 모델 회사에 대한 코드는 없고, "채팅 모델이라면 이런 메서드를 가져야 한다"는 약속만 정합니다. 그래서 의존성이 가볍고 안정적이며 버전이 자주 깨지지 않도록 관리됩니다. 체인에서 Prompt와 Parser는 전부 core의 부품입니다.
+
+langchain-openai 같은 연동 패키지는 core가 정한 인터페이스를 특정 제공자의 API에 맞게 구현한 "파트너 패키지"입니다. langchain-openai는 내부적으로 OpenAI 공식 openai SDK를 쓰며, ChatOpenAI(BaseChatModel의 구현), OpenAIEmbeddings(Embeddings의 구현), AzureChatOpenAI(Azure에 배포된 모델용)를 제공합니다. 같은 계층에 langchain-ollama(ChatOllama), langchain-anthropic(ChatAnthropic), langchain-google-genai(ChatGoogleGenerativeAI) 같은 형제 패키지들이 있습니다. 모두 같은 BaseChatModel을 구현하므로 import 한 줄만 바꾸면 모델을 교체할 수 있고, 체인의 Model 단계가 바로 이 계층입니다. 참고로 ChatOpenAI는 base_url을 바꾸면 OpenAI 호환 API를 제공하는 다른 서버(vLLM, LM Studio, Ollama의 /v1 엔드포인트 등)에도 붙일 수 있어서 로컬 모델에 쓸 때도 자주 보게 됩니다.
+
+langchain 패키지는 core의 부품을 조합해 애플리케이션 수준의 기능을 제공하며, 대표적인 것이 에이전트입니다. LangChain 1.0(2025년 10월) 이후 langchain 패키지는 에이전트 중심으로 정리되었습니다. 대표 API는 create_agent이고, 에이전트 실행 중간에 로직을 끼워 넣는 미들웨어(middleware) 개념도 여기에 있으며, 내부적으로는 LangGraph 위에서 동작합니다. 예전의 LLMChain, RetrievalQA 같은 레거시 체인들은 langchain-classic으로 분리되었는데, 인터넷의 오래된 튜토리얼 코드가 잘 안 돌아가는 이유가 대부분 이것입니다. 단순한 Prompt → Model → Parser 체인이라면 langchain 없이 langchain-core와 연동 패키지만으로 충분하고, langchain은 에이전트처럼 한 단계 위의 기능이 필요할 때 추가합니다.
+
+비유하면 core는 "콘센트 규격", langchain-openai는 "그 규격에 맞춘 OpenAI 제품", langchain은 "그 제품들을 엮어 만든 가전 시스템"입니다. 규격이 같기 때문에 제품을 바꿔 꽂아도 시스템이 그대로 동작합니다.
+
+### 4. PromptTemplate과 ChatPromptTemplate
+
+두 템플릿이 따로 있는 이유는 LLM이 입력을 받는 방식이 두 가지였기 때문입니다. 완성형(completion) 모델은 "다음 문장을 이어 써라: 옛날 옛적에" 같은 문자열 하나를 받고, 채팅(chat) 모델은 역할이 붙은 메시지 목록을 받습니다. 초기 GPT-3 시절에는 완성형이 기본이었고 지금은 거의 모든 모델이 채팅 방식입니다. PromptTemplate은 문자열용이고, ChatPromptTemplate은 메시지 목록용입니다.
+
+PromptTemplate은 빈칸(`{변수}`)이 있는 문자열에 값을 채워 완성된 문자열 하나를 만듭니다. from_template()으로 만들고, 출력은 StringPromptValue(속은 그냥 문자열)입니다. 역할(system/human) 구분이 없어서 모든 내용이 한 덩어리 텍스트입니다. 이것을 채팅 모델에 넣어도 에러는 나지 않습니다. LangChain이 문자열을 자동으로 HumanMessage 하나로 감싸서 보내기 때문입니다. 다만 system 메시지를 따로 줄 방법이 없어서 역할 설정이 약해집니다.
+
+```python
+from langchain_core.prompts import PromptTemplate
+
+prompt = PromptTemplate.from_template(
+    "{topic}에 대해 초등학생도 이해할 수 있게 3문장으로 설명해줘."
+)
+prompt.invoke({"topic": "광합성"})
+# → StringPromptValue(text="광합성에 대해 초등학생도 이해할 수 있게 3문장으로 설명해줘.")
+```
+
+ChatPromptTemplate은 역할별 메시지 여러 개를 템플릿으로 정의하고, 값을 채워 메시지 목록을 만듭니다. from_messages()로 만들고, 출력은 ChatPromptValue(속은 메시지 목록)입니다. 역할은 "system"(규칙·페르소나), "human"(사용자 발화), "ai"(모델의 이전 답변, few-shot 예시에 사용)가 있습니다.
+
+```python
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "너는 {level} 눈높이에 맞춰 설명하는 과학 선생님이다."),
+    ("human", "{topic}이 뭐야?"),
+])
+prompt.invoke({"level": "초등학생", "topic": "광합성"})
+# → ChatPromptValue(messages=[SystemMessage(...), HumanMessage("광합성이 뭐야?")])
+```
+
+ChatPromptTemplate만 할 수 있는 일이 두 가지 있습니다. 첫째, MessagesPlaceholder로 대화 기록을 끼워 넣을 수 있습니다. 챗봇은 이전 대화를 매번 같이 보내야 하는데, 메시지 목록이 통째로 들어갈 자리를 템플릿에 비워 둘 수 있습니다. 둘째, few-shot 예시를 대화 형식으로 넣을 수 있습니다. ("human", "사과"), ("ai", "과일"), ("human", "당근"), ("ai", "채소")처럼 human/ai 쌍으로 예시를 주면, 모델은 "이렇게 물으면 이렇게 답하는구나"를 실제 대화처럼 학습합니다.
+
+```python
+from langchain_core.prompts import MessagesPlaceholder
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "너는 친절한 도우미다."),
+    MessagesPlaceholder("history"),     # ← 여기에 이전 대화들이 들어감
+    ("human", "{question}"),
+])
+```
+
+둘의 공통점도 있습니다. 둘 다 Runnable이라서 `prompt | model | parser`로 연결할 수 있고, 출력이 모두 PromptValue라는 공통 타입입니다. PromptValue는 .to_string()과 .to_messages()를 모두 가지고 있어서, 어느 모델에 넣든 알맞은 형태로 변환됩니다. 변수 문법도 같아서 기본은 파이썬 f-string 스타일 `{변수}`입니다. 주의할 점은 프롬프트 안에 JSON 예시처럼 진짜 중괄호를 쓰려면 `{{ }}`로 두 번 써야 한다는 것입니다. 그렇지 않으면 변수로 인식되어 "변수가 없다"는 에러가 납니다. 또 partial()로 일부 변수를 미리 채워 둘 수 있습니다(예: prompt.partial(level="초등학생")).
+
+정리하면, 지금은 거의 모든 모델이 채팅 모델이므로 기본은 ChatPromptTemplate입니다. PromptTemplate은 역할 구분이 필요 없는 짧은 한 줄 지시나, 문자열 조각을 만드는 보조 용도로 씁니다.
+
+### 5. ChatModel
+
+ChatModel은 LangChain에서 채팅형 LLM을 감싸는 표준 인터페이스입니다. langchain-core의 BaseChatModel이라는 추상 클래스가 규칙을 정하고, ChatOpenAI, ChatOllama, ChatAnthropic 같은 각 제공자 패키지의 클래스가 그 규칙을 구현합니다. 한 줄로 말하면 "메시지 목록을 받아서 AI 메시지 하나를 돌려주는 부품"이고, 체인의 Model 자리에 들어갑니다. LangChain에는 LLM이라는 클래스도 있는데, 이것은 문자열을 받아 문자열을 돌려주는 완성형 모델용입니다. PromptTemplate과 ChatPromptTemplate의 관계와 같으며, 지금은 거의 쓰지 않으므로 ChatModel이 기본입니다.
+
+모델을 만들 때 제공자마다 조금씩 다르지만 공통적으로 자주 보는 파라미터가 있습니다. model은 모델 이름, temperature는 출력의 무작위성(낮을수록 일관되고 높을수록 다양함), max_tokens는 생성할 최대 토큰 수(응답 길이와 비용의 상한), timeout은 응답을 기다릴 최대 시간, max_retries는 네트워크 오류 등으로 실패했을 때 재시도할 횟수, base_url은 API 서버 주소(로컬 서버나 호환 API에 붙일 때 사용)입니다. init_chat_model을 쓰면 "ollama:qwen3:8b" 같은 문자열 설정만으로 제공자에 상관없이 모델을 고를 수 있어서, 여러 모델을 바꿔 가며 비교할 때 편합니다.
+
+```python
+from langchain_ollama import ChatOllama
+model = ChatOllama(model="qwen3:8b", temperature=0)
+
+from langchain.chat_models import init_chat_model
+model = init_chat_model("ollama:qwen3:8b", temperature=0)
+```
+
+ChatModel의 입력은 원래 메시지 목록이지만, 편의를 위해 여러 형태를 알아서 변환합니다. 문자열 하나를 넣으면 HumanMessage 하나로 바꾸고, ("system", "짧게 답해") 같은 (역할, 내용) 튜플 목록, 메시지 객체 목록, 그리고 체인에서 자동으로 넘어오는 PromptValue도 모두 받습니다.
+
+출력은 문자열이 아니라 AIMessage 객체이며, 텍스트 외에도 정보가 많이 들어 있습니다. content는 답변 텍스트, usage_metadata는 입력·출력·전체 토큰 수, response_metadata는 모델 이름이나 종료 이유(finish reason) 같은 제공자별 정보, tool_calls는 모델이 도구 호출을 요청했을 때 그 내용입니다. usage_metadata는 토큰 사용량을 제공자 구분 없이 같은 형식으로 보여 주므로 비용과 성능을 비교할 때 유용합니다. 이 AIMessage에서 텍스트만 꺼내 주는 것이 StrOutputParser의 역할입니다.
+
+ChatModel도 Runnable이므로 공통 실행 메서드를 모두 가집니다. invoke는 1건을 실행해 완성된 결과를 돌려주는 기본 방식이고, stream은 토큰이 생성되는 대로 조각(AIMessageChunk)을 하나씩 돌려줘 채팅 UI처럼 글자가 흘러나오게 할 때 씁니다. batch는 여러 입력을 병렬로 실행해 평가 데이터셋을 한꺼번에 돌릴 때 쓰고, ainvoke·astream·abatch는 FastAPI 같은 비동기 서버 안에서 쓰는 비동기 버전입니다.
+
+```python
+for chunk in model.stream("바다에 대한 짧은 시를 써줘"):
+    print(chunk.content, end="", flush=True)
+```
+
+정리하면 ChatModel은 "어떤 회사의 LLM이든 같은 콘센트에 꽂을 수 있게 만든 어댑터"이고, 제공자가 달라도 쓰는 법이 같아서 모델 교체와 비교가 쉽습니다.
+
+### 6. 도구 호출과 구조화된 출력 — bind_tools와 with_structured_output
+
+> 참고 · Tool calling의 원리와 에이전트 루프는 [하네스 엔지니어링 · 5. Tool Calling과 에이전트 파이프라인](#5-tool-calling과-에이전트-파이프라인)
+
+ChatModel에는 기본적인 대화 외에, 모델이 가진 기능을 표준화된 방식으로 꺼내 쓰는 메서드가 있습니다.
+
+bind_tools()는 모델에게 "이런 함수들을 쓸 수 있다"고 알려 주는 도구 호출(tool calling) 기능입니다. 모델은 직접 함수를 실행하지 않고, "이 함수를 이 인자로 호출해 달라"는 요청을 AIMessage.tool_calls에 담아 돌려줍니다. 실제 실행은 우리 코드(또는 에이전트)가 합니다. 이것이 에이전트의 기초로, 에이전트는 "모델이 도구를 요청 → 코드가 실행 → 결과를 다시 모델에게 전달"을 반복하는 구조입니다.
+
+```python
+def get_weather(city: str) -> str:
+    """도시의 현재 날씨를 알려준다."""
+    ...
+
+model_with_tools = model.bind_tools([get_weather])
+res = model_with_tools.invoke("서울 날씨 어때?")
+res.tool_calls   # [{"name": "get_weather", "args": {"city": "서울"}, ...}]
+```
+
+with_structured_output()은 응답을 정해진 스키마의 객체로 받는 구조화된 출력(structured output) 기능입니다. 텍스트를 받아 파서로 해석하는 대신, 모델의 도구 호출이나 JSON 모드를 이용해 처음부터 형식을 강제합니다. 이 경우 Parser 단계가 필요 없으며, Model 단계가 Parser 역할까지 맡는다고 보면 됩니다.
+
+```python
+from pydantic import BaseModel
+
+class Review(BaseModel):
+    sentiment: str   # "긍정" / "부정"
+    score: int       # 1~5
+
+structured = model.with_structured_output(Review)
+structured.invoke("배송은 느렸지만 제품은 정말 좋다")
+# → Review(sentiment="긍정", score=4)
+```
+
+주의할 점은 이 두 기능이 모델 자체가 도구 호출을 지원해야 제대로 동작한다는 것입니다. 작은 로컬 모델은 지원하지 않거나 정확도가 떨어질 수 있으므로, 모델을 고를 때 확인해야 합니다.
+
+### 7. Runnable — 공통 인터페이스
+
+Runnable은 LangChain에서 "실행할 수 있는 모든 것"이 따르는 공통 인터페이스이며, langchain-core에 정의되어 있습니다. ChatPromptTemplate, ChatOllama, StrOutputParser, Retriever, Tool이 모두 Runnable이고, 이 부품들을 연결한 체인도 Runnable입니다. 부품마다 사용법이 다르면 연결할 때마다 접착 코드가 필요하므로, "모든 부품은 입력 하나를 받아 출력 하나를 내고, 같은 메서드로 실행된다"는 규칙을 정한 것입니다. 이 규칙 덕분에 부품을 `|`로 자유롭게 이어 붙일 수 있습니다.
+
+모든 Runnable은 invoke(입력 1개 실행), batch(여러 입력을 병렬 실행해 결과 목록 반환), stream(결과를 조각 단위로 흘려보냄)과 그 비동기 버전(ainvoke, abatch, astream)을 가지며, 각 부품이 따로 구현하지 않아도 기본 동작이 제공됩니다. 체인 전체에 stream()을 호출하면 스트리밍이 체인을 따라 전달됩니다. 모델이 토큰을 하나 만들면 파서가 바로 처리해서 내보내므로, 스트리밍을 지원하는 부품들로만 이어져 있다면 체인 전체가 자연스럽게 스트리밍됩니다.
+
+```python
+chain = prompt | model | parser
+
+chain.invoke({"topic": "광합성"})                       # 1건
+chain.batch([{"topic": "광합성"}, {"topic": "중력"}])     # 여러 건 병렬
+for chunk in chain.stream({"topic": "광합성"}):          # 스트리밍
+    print(chunk, end="")
+```
+
+Runnable이 공통 규약이라서 어떤 부품이든 같은 방식으로 기능을 덧붙일 수도 있습니다. with_retry()는 실패하면 자동으로 재시도하고, with_fallbacks([...])는 실패하면 대체 Runnable로 넘어가며(예: 로컬 모델 실패 시 클라우드 모델로), with_config(run_name=..., tags=...)는 실행 이름이나 태그를 붙여 추적과 디버깅을 쉽게 하고, bind(...)는 호출 인자를 미리 고정합니다(앞에서 본 bind_tools도 같은 계열). 또 실행할 때 config={"max_concurrency": 4}처럼 RunnableConfig를 넘기면 batch 동시 실행 수, 콜백, 태그 등을 체인 전체에 전달할 수 있습니다. LangSmith 같은 추적 도구가 체인 내부 단계를 하나하나 기록할 수 있는 것도 이 구조 덕분입니다.
+
+```python
+safe_model = local_model.with_fallbacks([cloud_model])
+chain = prompt | safe_model | parser
+```
+
+정리하면 Runnable은 LangChain 부품들의 "공통 규격 플러그"입니다. 규격이 하나이기 때문에 Prompt, Model, Parser, Retriever를 `|`로 자유롭게 연결할 수 있고, 연결한 체인에도 스트리밍, 병렬 실행, 재시도 같은 기능이 그대로 적용됩니다.
+
+### 8. Runnable 조합 — Sequence, Parallel, Lambda, Passthrough
+
+Runnable끼리 조합한 결과도 Runnable입니다. 그래서 작은 체인을 큰 체인의 부품으로 다시 쓸 수 있습니다. 조합 방법은 네 가지가 기본입니다.
+
+RunnableSequence는 순서대로 연결하는 것으로, 앞 단계의 출력이 다음 단계의 입력이 됩니다. `prompt | model | parser`라고 쓰면 내부적으로 RunnableSequence가 만들어집니다.
+
+RunnableParallel은 같은 입력을 여러 Runnable에 동시에 넣고, 결과를 키별로 모아 딕셔너리로 돌려줍니다. 예를 들어 summary=요약 체인, keywords=키워드 체인으로 묶으면 {"summary": ..., "keywords": ...}가 나옵니다. 체인 안에서는 그냥 딕셔너리를 써도 자동으로 RunnableParallel로 변환됩니다.
+
+RunnableLambda는 직접 만든 파이썬 함수를 Runnable로 만들어 체인 중간에 끼워 넣을 때 씁니다. 체인 안에서는 함수를 그냥 넣어도 자동으로 변환됩니다.
+
+RunnablePassthrough는 입력을 변형 없이 다음 단계로 넘깁니다. 주로 RunnableParallel 안에서 "원래 입력도 같이 넘기고 싶을 때" 씁니다.
+
+이 조합 도구들이 함께 쓰이는 대표적인 예가 RAG 체인의 뼈대입니다. 질문이 들어오면 딕셔너리(RunnableParallel)가 동시에 두 가지 일을 합니다. retriever는 질문으로 관련 문서를 검색해 context에 담고, RunnablePassthrough는 질문을 그대로 question에 담습니다. 이렇게 만들어진 {"context": [...], "question": "..."}가 prompt의 두 변수를 채우고, model과 parser를 거쳐 답변 문자열이 됩니다.
+
+```python
+from langchain_core.runnables import RunnablePassthrough
+
+rag_chain = (
+    {
+        "context": retriever,               # 질문으로 문서 검색
+        "question": RunnablePassthrough(),  # 질문은 그대로 전달
+    }                                       # ← 딕셔너리 = RunnableParallel
+    | prompt                                # {context}, {question}을 채움
+    | model
+    | parser
+)
+rag_chain.invoke("광합성에 필요한 조건은?")
+```

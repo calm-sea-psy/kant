@@ -585,6 +585,28 @@
 - **에이전트 루프 상세**: 모델 호출 → 텍스트면 종료, 도구 호출이면 하네스가 파싱·실행 → 결과를 tool 메시지로 대화에 추가 → 전체 대화로 재호출·반복. 도구 결과도 매 호출마다 통째로 재입력
 - **도구 파이프라인 설계 포인트**: 이름·설명문·스키마 품질이 호출 정확도 좌우, 문법 제약 디코딩으로 스키마 밖 토큰 차단, 병렬/순차 호출의 지연-의존성 트레이드오프, 오류는 tool 결과로 그대로 되돌려 재시도 유도, 최대 반복·타임아웃으로 종료 강제
 
+### LangChain 기초 · [상세 →](4-LLM.md#langchain-기초-promptmodelparserrunnable)
+
+> 출처 TIL: 260929
+
+- **LangChain**: LLM 앱에서 반복되는 작업(프롬프트 조립 → 모델 호출 → 응답 파싱)을 같은 인터페이스의 부품으로 표준화한 프레임워크. 부품을 레고처럼 이어 붙임
+- **LCEL**: | 연산자로 부품을 연결하는 문법. 앞 부품의 출력이 다음 부품의 입력 (유닉스 파이프와 같은 개념)
+- **Prompt 단계**: 템플릿에 입력 딕셔너리를 채워 메시지 목록(PromptValue)을 만듦 — "무엇을 물을지"
+- **Model 단계**: 메시지 목록으로 LLM 호출 → AIMessage(텍스트 + 토큰 사용량 + 도구 호출 등 메타데이터) — "누가 답할지"
+- **Parser 단계**: AIMessage를 코드가 쓸 형태로 변환 — StrOutputParser(문자열), JsonOutputParser(dict), PydanticOutputParser(검증된 객체). get_format_instructions()로 Prompt와 짝을 이룸 — "어떤 모양으로 받을지"
+- **langchain-core**: Runnable·메시지·프롬프트·파서·추상 클래스(BaseChatModel 등)만 정의한 뼈대. 제공자 코드 없음, 가볍고 안정적
+- **연동 패키지(langchain-openai 등)**: core 인터페이스를 제공자 API에 맞게 구현(ChatOpenAI, ChatOllama, ChatAnthropic). import 한 줄로 모델 교체. ChatOpenAI는 base_url로 OpenAI 호환 로컬 서버에도 연결
+- **langchain 패키지**: core 부품을 조합한 고수준 기능. 1.0 이후 에이전트 중심(create_agent, 미들웨어, LangGraph 기반). 레거시 체인(LLMChain 등)은 langchain-classic으로 분리
+- **PromptTemplate**: 빈칸 있는 문자열 → 문자열 하나(StringPromptValue). 역할 구분 없음, 채팅 모델에 넣으면 HumanMessage 하나로 감싸짐
+- **ChatPromptTemplate**: 역할별(system/human/ai) 메시지 목록 템플릿. MessagesPlaceholder로 대화 기록 삽입, human/ai 쌍으로 few-shot. 지금의 기본값
+- **템플릿 주의점**: 진짜 중괄호는 {{ }}로 이스케이프, partial()로 일부 변수 미리 채우기
+- **ChatModel**: BaseChatModel을 따르는 채팅 LLM 래퍼. 메시지 목록(문자열·튜플·PromptValue도 자동 변환) → AIMessage. 주요 파라미터 model·temperature·max_tokens·timeout·max_retries·base_url, init_chat_model로 문자열 설정만으로 생성
+- **bind_tools()**: 모델에게 쓸 수 있는 함수를 알려 줌. 모델은 실행하지 않고 tool_calls로 호출 요청만 반환 — 에이전트의 기초
+- **with_structured_output()**: 도구 호출·JSON 모드로 응답을 스키마 객체로 강제. Parser 단계가 필요 없어짐. 둘 다 모델의 도구 호출 지원이 전제
+- **Runnable**: 입력 하나 → 출력 하나를 내는 모든 부품의 공통 인터페이스. invoke·batch·stream(+비동기), 체인 전체 스트리밍 전파. 조합 결과도 Runnable
+- **Runnable 부가 기능**: with_retry(재시도), with_fallbacks(대체 경로), with_config(이름·태그), bind(인자 고정), RunnableConfig로 동시 실행 수·콜백 전달
+- **Runnable 조합**: Sequence(| 순차), Parallel(같은 입력 동시 실행 → dict, 딕셔너리로 자동 변환), Lambda(함수를 부품으로), Passthrough(입력 그대로 전달). RAG 뼈대 = {context: retriever, question: Passthrough} | prompt | model | parser
+
 ## 웹개발
 
 ### HTTP 기초 · [상세 →](5-웹개발.md#http-기초-요청-메시지메서드상태-코드)
