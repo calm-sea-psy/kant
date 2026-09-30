@@ -587,7 +587,7 @@
 
 ### LangChain 기초 · [상세 →](4-LLM.md#langchain-기초-promptmodelparserrunnable)
 
-> 출처 TIL: 260929
+> 출처 TIL: 260929, 260930
 
 - **LangChain**: LLM 앱에서 반복되는 작업(프롬프트 조립 → 모델 호출 → 응답 파싱)을 같은 인터페이스의 부품으로 표준화한 프레임워크. 부품을 레고처럼 이어 붙임
 - **LCEL**: | 연산자로 부품을 연결하는 문법. 앞 부품의 출력이 다음 부품의 입력 (유닉스 파이프와 같은 개념)
@@ -606,6 +606,19 @@
 - **Runnable**: 입력 하나 → 출력 하나를 내는 모든 부품의 공통 인터페이스. invoke·batch·stream(+비동기), 체인 전체 스트리밍 전파. 조합 결과도 Runnable
 - **Runnable 부가 기능**: with_retry(재시도), with_fallbacks(대체 경로), with_config(이름·태그), bind(인자 고정), RunnableConfig로 동시 실행 수·콜백 전달
 - **Runnable 조합**: Sequence(| 순차), Parallel(같은 입력 동시 실행 → dict, 딕셔너리로 자동 변환), Lambda(함수를 부품으로), Passthrough(입력 그대로 전달). RAG 뼈대 = {context: retriever, question: Passthrough} | prompt | model | parser
+- **LCEL 동작 원리**: Runnable이 __or__를 재정의해 a | b가 RunnableSequence(a, b)를 만듦. 내부는 first·middle·last를 차례로 invoke하는 반복문, 앞 출력 타입과 뒤 입력 타입이 맞아야 함(어긋나면 실행 시 에러)
+- **LCEL 한계**: 한 방향 파이프라인(DAG)용. 반복·조건 분기·상태 관리가 많은 에이전트 루프는 LangGraph로
+- **Parallel 동시 실행**: 동기는 스레드 풀, 비동기는 asyncio.gather. 걸리는 시간은 합이 아니라 가장 느린 분기 정도
+- **Parallel은 원래 입력을 버림**: 분기 출력만 dict로 모으므로 질문을 살리려면 Passthrough 분기가 필요. 문서를 숨기려는 게 아니라 질문을 챙기려는 것. Parallel은 dict로 나란히 묶고, 하나의 글로 합치는 건 prompt
+- **조합의 중첩(closure)**: 묶은 결과도 Runnable → Sequence 안에 Parallel, 그 안에 다시 Sequence를 몇 겹이든. 재사용·기능(stream·batch) 자동 전파·부분 테스트가 쉬움
+- **RunnableLambda 주의점**: 인자는 하나(여러 값은 dict로), 일반 함수라 그 단계에서는 스트리밍이 한꺼번에 전달됨
+- **RunnablePassthrough.assign**: 입력 dict를 유지한 채 키 추가(Parallel은 지정 키만 남김). 단계마다 키가 쌓여 답변과 근거 문서를 함께 반환하는 RAG 패턴에 사용
+- **Pydantic 스키마**: BaseModel 클래스로 필드·타입·설명을 정의하는 설계도. 구조 정의 + 검증(틀리면 에러, "8"은 8로 변환), JSON 스키마로 변환돼 모델에 전달
+- **구조화된 출력 방식 3가지**: 도구 호출(흔함, 신뢰도 높음) · JSON 모드/네이티브 스키마(매우 높음) · 프롬프트 지시+파싱(낮음). 마지막엔 Pydantic이 검증
+- **구조화된 출력 실무 팁**: Field description도 프롬프트, 작은 모델은 검증 실패가 잦아 재시도나 include_raw=True로 처리, 스키마는 단순할수록 안정적. 분류·추출·라우팅에 사용
+- **with_structured_output vs PydanticOutputParser**: 서식지를 건네기(API 기능으로 형식 보장, 지원 모델만) vs 말로 부탁하고 사후 파싱(아무 모델, 형식 이탈 시 실패). 기본은 전자, 후자는 미지원 모델용 대안
+- **Document**: page_content(모델이 읽는 본문) + metadata(출처·페이지 등, 프로그램이 활용) + id(선택). 로더 → 분할기 → 벡터 저장소 → 검색기가 모두 Document 목록을 주고받음
+- **metadata 활용**: 출처 표시, 검색 필터링, 분할 시 모든 조각에 자동 상속. 검색 결과는 format_docs로 문자열로 바꿔 {context}에 넣음
 
 ## 웹개발
 

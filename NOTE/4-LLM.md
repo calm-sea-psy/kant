@@ -2,7 +2,7 @@
 
 자연어 처리 기초, 트랜스포머 아키텍처, 사전학습 언어모델(BERT·GPT), 텍스트 생성·디코딩, Hugging Face Transformers, 텍스트 분류 fine-tuning, 프롬프트·PEFT·파인튜닝 적응 방법, MoE 서빙(FreeToken), 하네스 엔지니어링, LangChain 기초.
 
-> 출처 TIL: 260901, 260902, 260904, 260907, 260908, 260909, 260910, 260911, 260921, 260929
+> 출처 TIL: 260901, 260902, 260904, 260907, 260908, 260909, 260910, 260911, 260921, 260929, 260930
 
 ## 목차
 
@@ -110,6 +110,13 @@
     - [6. 도구 호출과 구조화된 출력 — bind_tools와 with_structured_output](#6-도구-호출과-구조화된-출력--bind_tools와-with_structured_output)
     - [7. Runnable — 공통 인터페이스](#7-runnable--공통-인터페이스)
     - [8. Runnable 조합 — Sequence, Parallel, Lambda, Passthrough](#8-runnable-조합--sequence-parallel-lambda-passthrough)
+    - [9. LCEL 파이프의 동작 원리와 한계](#9-lcel-파이프의-동작-원리와-한계)
+    - [10. RunnableParallel 심화 — 동시 실행과 원래 입력 보존](#10-runnableparallel-심화--동시-실행과-원래-입력-보존)
+    - [11. 조합의 중첩 — 조립한 결과물도 다시 부품이 된다](#11-조합의-중첩--조립한-결과물도-다시-부품이-된다)
+    - [12. RunnableLambda의 주의점과 RunnablePassthrough.assign](#12-runnablelambda의-주의점과-runnablepassthroughassign)
+    - [13. Pydantic 스키마와 구조화된 출력](#13-pydantic-스키마와-구조화된-출력)
+    - [14. with_structured_output과 PydanticOutputParser의 차이](#14-with_structured_output과-pydanticoutputparser의-차이)
+    - [15. Document — RAG의 기본 데이터 단위](#15-document--rag의-기본-데이터-단위)
 
 ---
 
@@ -1191,7 +1198,7 @@ Tool calling 자체는 모델이 구조화된 요청을 출력하는 능력이�
 
 ## LangChain 기초 (Prompt·Model·Parser·Runnable)
 
-> 출처 TIL: 260929
+> 출처 TIL: 260929, 260930
 
 ### 1. LangChain이란 무엇인가
 
@@ -1396,4 +1403,161 @@ rag_chain = (
     | parser
 )
 rag_chain.invoke("광합성에 필요한 조건은?")
+```
+
+### 9. LCEL 파이프의 동작 원리와 한계
+
+> 참고 · Runnable의 기본 개념과 공통 메서드는 [7. Runnable — 공통 인터페이스](#7-runnable--공통-인터페이스)
+
+`a | b`라는 문법이 가능한 이유는 Runnable이 파이썬의 `__or__` 연산자를 재정의해 두었기 때문입니다. 두 Runnable 사이에 `|`를 쓰면 파이썬은 `a.__or__(b)`를 호출하고, LangChain은 여기서 RunnableSequence(a, b)라는 새 객체를 만들어 돌려줍니다. 그래서 `chain = prompt | model | parser`는 아래처럼 각 부품의 invoke를 차례로 부르는 코드와 의미가 같습니다.
+
+```python
+x = prompt.invoke({"topic": "고양이"})
+x = model.invoke(x)
+x = parser.invoke(x)
+```
+
+RunnableSequence는 내부적으로 첫 단계(first), 중간 단계들(middle, 리스트), 마지막 단계(last)를 가지고 있고, invoke가 호출되면 이것들을 순서대로 실행하는 단순한 반복문처럼 동작합니다. 여기서 지켜야 할 조건은 앞 단계의 출력 타입이 뒤 단계의 입력 타입과 맞아야 한다는 것입니다. 예를 들어 ChatPromptTemplate은 딕셔너리를 받아 메시지 목록을 내고, ChatModel은 메시지 목록을 받아 AIMessage를 내고, StrOutputParser는 AIMessage를 받아 문자열을 냅니다. 이 연결이 어긋나면 체인을 만들 때가 아니라 실행할 때 에러가 납니다. batch를 호출하면 각 단계의 batch가 차례로 불리고, stream을 호출하면 각 단계가 조각(chunk)을 받아 처리할 수 있는 한 조각이 파이프를 따라 계속 흘러갑니다.
+
+LCEL은 데이터가 한 방향으로 흐르는 파이프라인, 즉 갈라졌다 다시 합쳐질 수는 있어도 되돌아가지는 않는 방향성 비순환 그래프(DAG)에 잘 맞습니다. 요약, 번역, 분류, 기본 RAG 같은 작업이 여기에 해당합니다. 반면 "결과가 부족하면 다시 검색한다"처럼 반복이나 조건 분기가 많은 에이전트 루프, 여러 단계에 걸쳐 상태를 관리해야 하는 흐름은 LCEL로 표현하면 금방 복잡해집니다. 이런 경우에는 노드와 엣지로 이루어진 상태 그래프를 설계하는 LangGraph로 넘어가는 것이 일반적입니다. "LCEL은 직선형 조립용"이라고 기억해 두면 충분합니다.
+
+### 10. RunnableParallel 심화 — 동시 실행과 원래 입력 보존
+
+> 참고 · 네 가지 조합 도구의 기본 소개는 [8. Runnable 조합 — Sequence, Parallel, Lambda, Passthrough](#8-runnable-조합--sequence-parallel-lambda-passthrough)
+
+RunnableParallel의 분기들은 이름 그대로 동시에 실행됩니다. 동기 방식(invoke)으로 부르면 스레드 풀에서, 비동기 방식(ainvoke)으로 부르면 asyncio.gather로 분기들을 함께 돌립니다. 그래서 LLM을 여러 번 호출하는 분기가 있을 때 전체 걸리는 시간이 각 분기 시간의 합이 아니라 가장 느린 분기의 시간 정도로 줄어듭니다. 출력은 항상 딕셔너리이고 키 이름은 사용자가 정합니다.
+
+RunnableParallel을 이해할 때 가장 중요한 성질은 모든 분기가 똑같은 원래 입력을 받지만, 최종 결과에는 각 분기의 출력만 담기고 원래 입력은 버려진다는 점입니다. RAG 체인에서 `{"context": retriever}`만 쓰면 결과는 `{"context": [문서들]}`뿐이라서, 프롬프트의 {question} 칸을 채울 질문이 사라집니다. 그래서 입력을 그대로 내보내는 RunnablePassthrough를 question 분기로 하나 더 두는 것입니다. Passthrough의 목적은 검색된 문서를 숨기는 것이 아니라, 문서를 가져오는 동안 질문이 사라지지 않게 챙기는 것입니다. 문서와 질문은 둘 다 다음 단계로 넘어갑니다.
+
+여기서 "문서와 질문을 합친다"는 과정은 두 단계로 나뉩니다. 먼저 RunnableParallel이 두 값을 `{"context": ..., "question": ...}`처럼 각자의 칸에 나란히 담은 딕셔너리로 묶습니다. 아직 글자를 합친 것은 아니고, 서류 두 장을 한 봉투에 넣은 상태입니다. 그다음 프롬프트 템플릿이 "문서: {context} / 질문: {question}" 같은 틀의 각 칸에 값을 채워 넣으면서 비로소 하나의 메시지로 합쳐지고, 그것이 모델에 전달됩니다. 체인의 최종 결과에서 문서가 보이지 않는 이유도 Passthrough 때문이 아니라, 프롬프트가 딕셔너리를 메시지 하나로 합치고 모델과 파서가 답변 문자열만 내보내기 때문입니다.
+
+프롬프트 템플릿은 딕셔너리를 입력으로 받기 때문에, "딕셔너리를 만드는 장치"인 RunnableParallel은 프롬프트 바로 앞에 자주 놓입니다. 분기 안에 `retriever | format_docs` 같은 Sequence를 넣을 수도 있습니다.
+
+```python
+chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | model
+    | StrOutputParser()
+)
+```
+
+### 11. 조합의 중첩 — 조립한 결과물도 다시 부품이 된다
+
+Sequence나 Parallel로 여러 Runnable을 묶으면, 그 결과물도 invoke, batch, stream을 가진 똑같은 Runnable이 됩니다. 수학에서 정수끼리 더하면 다시 정수가 되는 것처럼, Runnable끼리 조합한 결과도 다시 Runnable이 된다는 의미에서 조합이 닫혀 있다(closure)고 말합니다. 그래서 바깥에서 보면 원래 부품인지 여러 부품을 묶은 덩어리인지 구분할 필요가 없고, Sequence 안에 Parallel을, 그 Parallel 안에 다시 Sequence를 몇 겹이든 넣을 수 있습니다. 레고 블록 여러 개를 붙여 만든 덩어리에도 아래에 똑같은 돌기와 구멍이 있어서 다른 블록에 그대로 끼울 수 있는 것과 같습니다.
+
+```python
+summarize = summary_prompt | model | StrOutputParser()      # Sequence
+
+analyze = RunnableParallel(                                   # Parallel
+    summary=summarize,                                        # 분기 = Sequence
+    keywords=keyword_prompt | model | StrOutputParser(),
+)
+
+report = analyze | report_prompt | model | StrOutputParser()  # 다시 Sequence
+```
+
+report는 Sequence이고, 그 첫 단계인 analyze는 Parallel이며, analyze의 두 분기는 각각 Sequence입니다. Parallel 입장에서는 분기로 들어온 것이 모델 하나이든 세 단계짜리 체인이든 상관없고, 그냥 invoke를 호출할 뿐입니다.
+
+이 성질 덕분에 세 가지 이점이 생깁니다. 첫째, summarize처럼 한 번 만든 체인을 다른 체인 어디에든 부품으로 재사용할 수 있습니다. 둘째, 가장 바깥의 report.stream()이나 report.batch()를 호출하면 안쪽 모든 단계에 알아서 전달되므로, 중첩된 곳마다 스트리밍이나 병렬 실행을 따로 구현할 필요가 없습니다. 셋째, 큰 체인을 "요약 + 키워드 분석 → 보고서"처럼 작은 덩어리로 나눠 생각하고, summarize.invoke(...)만 따로 실행해 보는 식으로 부분별 테스트를 할 수 있습니다. 일반 프로그래밍에서 작은 함수를 만들고 그것들을 호출하는 큰 함수를 만드는 함수 합성과 같은 원리이며, LCEL은 이 합성을 `|`와 딕셔너리로 간단히 쓰게 해 준 것입니다.
+
+### 12. RunnableLambda의 주의점과 RunnablePassthrough.assign
+
+RunnableLambda는 LangChain이 제공하지 않는 처리(문서 목록을 문자열로 정리하기, 형식 변환 등)를 파이썬 함수로 만들어 체인에 끼울 때 씁니다. 파이프 안에서는 함수만 써도 자동으로 RunnableLambda로 바뀝니다. 주의할 점이 두 가지 있습니다. 첫째, 함수는 인자를 하나만 받아야 합니다. 여러 값이 필요하면 딕셔너리 하나로 받아서 안에서 꺼내 씁니다. 둘째, 함수로 감싸면 invoke, batch, ainvoke가 생기지만, 일반 함수는 결과를 한 번에 반환하므로 그 단계에서는 스트리밍이 조각 단위로 흐르지 않고 한꺼번에 전달됩니다.
+
+```python
+def format_docs(docs):
+    return "\n\n".join(d.page_content for d in docs)
+
+chain = retriever | format_docs | ...    # 자동으로 RunnableLambda가 됨
+```
+
+RunnablePassthrough.assign(...)은 입력 딕셔너리를 그대로 유지하면서 새 키를 덧붙입니다. RunnableParallel은 지정한 키만 담긴 새 딕셔너리를 만들기 때문에 기존 키를 남기려면 일일이 Passthrough나 itemgetter로 넘겨야 하지만, assign은 기존 키가 자동으로 유지됩니다. 그래서 assign은 "Passthrough와 Parallel을 합친 편의 기능"이라고 볼 수 있습니다.
+
+```python
+chain = RunnablePassthrough.assign(
+    context=lambda x: retriever.invoke(x["question"])
+)
+chain.invoke({"question": "LCEL이 뭐야?", "user": "민수"})
+# → {"question": "LCEL이 뭐야?", "user": "민수", "context": [문서들]}
+```
+
+assign은 입력 딕셔너리가 단계를 지날수록 키가 하나씩 쌓여 가는 체인을 만들 때 특히 편합니다. 예를 들어 첫 단계에서 context를, 다음 단계에서 answer를 덧붙이면 마지막에 질문, 근거 문서, 답변이 모두 남은 딕셔너리를 받게 됩니다. RAG에서 답변과 함께 출처를 보여 줄 때 자주 쓰는 패턴입니다.
+
+```python
+chain = (
+    RunnablePassthrough.assign(context=get_context)       # + context
+    | RunnablePassthrough.assign(answer=answer_chain)     # + answer
+)
+# 최종: {"question", "context", "answer"}가 모두 남아 있음
+```
+
+정리하면 Passthrough는 보존, Lambda는 사용자 정의 변환, assign은 보존하면서 추가하는 도구이며, 셋 모두 체인 안에서 데이터의 모양을 다듬는 보조 부품입니다.
+
+### 13. Pydantic 스키마와 구조화된 출력
+
+> 참고 · with_structured_output의 기본 사용법은 [6. 도구 호출과 구조화된 출력 — bind_tools와 with_structured_output](#6-도구-호출과-구조화된-출력--bind_tools와-with_structured_output)
+
+LLM은 기본적으로 글을 내놓습니다. "이 리뷰는 긍정적이고 점수는 대략 8점 정도로 보입니다" 같은 답은 사람이 읽기에는 좋지만, 프로그램이 점수가 7보다 큰지 판단하려면 문장에서 숫자를 직접 파싱해야 합니다. 모델이 "8/10", "여덟 점", "약 8점"처럼 매번 표현을 바꾸기 때문에 이런 파싱은 쉽게 깨집니다. 구조화된 출력(structured output)은 모델이 자유로운 문장 대신 정해진 설계도에 맞는 데이터를 내놓도록 만드는 기법이고, 그 설계도를 파이썬 클래스로 적는 도구가 Pydantic입니다.
+
+Pydantic 스키마는 BaseModel을 상속한 클래스로 필드 이름, 타입, 설명을 한곳에 정의합니다. Pydantic은 구조를 정의하는 일과 들어온 데이터가 설계도와 맞는지 검증(validation)하는 일을 함께 합니다. 예를 들어 score에 "많이" 같은 값이 들어오면 에러를 내고, "8" 같은 문자열은 가능하면 정수 8로 바꿔 줍니다. 또 이 클래스는 JSON 스키마로 변환할 수 있어서, 모델에게 "이 모양으로 답하라"고 알려 줄 때 그 JSON 스키마가 전달됩니다.
+
+```python
+from pydantic import BaseModel, Field
+from typing import Literal
+
+class Review(BaseModel):
+    sentiment: Literal["positive", "negative", "neutral"] = Field(description="리뷰의 감정")
+    score: int = Field(description="1~10 사이 평점", ge=1, le=10)
+    keywords: list[str] = Field(description="핵심 키워드 3개 이내")
+
+structured_model = model.with_structured_output(Review)
+result = structured_model.invoke("배송은 느렸지만 제품은 정말 좋아요!")
+result.score   # 정수 8
+```
+
+with_structured_output이 모델에게 스키마를 따르게 하는 방법은 크게 세 가지이며, 모델에 맞는 방법을 골라 줍니다. 가장 흔한 것은 스키마를 도구처럼 등록하고 모델이 그 도구의 인자를 채우게 하는 도구 호출(tool calling) 방식으로 신뢰도가 높습니다. JSON 모드나 네이티브 스키마 방식은 API가 출력 자체를 JSON 스키마에 맞도록 강제하므로 신뢰도가 매우 높습니다. 마지막으로 프롬프트에 글로 형식을 지시하고 결과를 파싱하는 방식은 모델이 지시를 어길 수 있어서 신뢰도가 낮습니다. 도구 호출은 원래 "모델이 함수 인자를 구조화된 형태로 채워서 내놓는" 기능이므로, 구조화된 출력은 그 기능을 데이터 추출용으로 재활용한 것이라고 볼 수 있습니다. 어느 방식이든 마지막에는 Pydantic이 결과를 검증해 최종 객체로 만들어 줍니다.
+
+실무에서 알아 둘 점이 세 가지 있습니다. 첫째, Field의 description도 프롬프트입니다. 이 설명이 스키마에 담겨 모델에게 전달되므로 명확하게 쓸수록 결과가 정확해집니다. 둘째, 검증 실패는 일어날 수 있습니다. 특히 작은 로컬 모델은 필드를 빠뜨리거나 타입을 틀리기도 하므로, 재시도하거나 include_raw=True 옵션으로 원본 응답과 에러를 함께 받아 처리합니다. 셋째, 스키마는 단순할수록 안정적입니다. 중첩이 깊거나 필드가 많으면 실패 확률이 올라갑니다. 에이전트 개발에서는 분류, 정보 추출, 라우팅(다음에 어느 단계로 갈지 결정)처럼 LLM 출력을 코드가 받아서 판단해야 하는 모든 곳에 이 조합이 쓰입니다.
+
+### 14. with_structured_output과 PydanticOutputParser의 차이
+
+두 도구 모두 LLM 답변을 Pydantic 객체로 받게 해 주지만, 모델이 형식을 지키게 만드는 방법이 다릅니다. PydanticOutputParser는 프롬프트에 "이 형식으로 답하라"고 글로 부탁한 뒤 모델이 쓴 글을 나중에 파싱하고, with_structured_output은 모델 API의 도구 호출이나 JSON 모드 기능을 사용해 처음부터 형식에 맞는 답을 받습니다. 비유하면 전자는 "양식대로 써 주세요"라고 말로 부탁하는 것이고, 후자는 빈칸이 정해진 서식지를 건네주는 것입니다.
+
+PydanticOutputParser의 흐름은 이렇습니다. get_format_instructions()가 "다음 JSON 스키마에 맞춰 답하라"는 지시문을 만들고, 그 지시문이 프롬프트에 글로 들어가며, 모델은 일반 텍스트로 답하고, 마지막에 파서가 텍스트에서 JSON을 찾아 Pydantic으로 검증합니다. 모델이 JSON을 잘 써 주기를 기대할 뿐이라서, "물론이죠! 결과는 다음과 같습니다:"처럼 앞뒤에 말을 붙이거나 따옴표나 필드를 빠뜨리면 파싱이 실패합니다. 체인에서는 `prompt | model | parser`처럼 모델 뒤에 붙습니다.
+
+```python
+parser = PydanticOutputParser(pydantic_object=Review)
+prompt = ChatPromptTemplate.from_template(
+    "리뷰를 분석하세요.\n{format_instructions}\n리뷰: {review}"
+).partial(format_instructions=parser.get_format_instructions())
+chain = prompt | model | parser
+```
+
+with_structured_output은 스키마를 API 요청의 별도 항목(도구 정의나 JSON 스키마 설정)으로 전달하고, 모델은 글이 아니라 구조화된 인자나 JSON으로 답하며, 그 결과를 Pydantic이 검증합니다. 프롬프트에 형식 지시문을 넣을 필요도, 파서를 따로 붙일 필요도 없고 모델 자체를 감싸는 형태로 쓰입니다. 대신 도구 호출이나 JSON 모드를 지원하는 모델에서만 쓸 수 있습니다. 스트리밍은 PydanticOutputParser가 부분 JSON 파싱으로 지원하는 반면, with_structured_output은 모델과 방식에 따라 다릅니다.
+
+기본 선택은 with_structured_output입니다. 요즘 주요 모델과 Ollama의 많은 모델이 도구 호출이나 JSON 스키마 출력을 지원하므로 더 안정적이고 간단합니다. PydanticOutputParser는 이런 기능을 지원하지 않는 모델을 써야 할 때의 대안이며, 구조화된 출력 기능이 나오기 전의 방식이라 예전 튜토리얼에서 자주 보입니다. 핵심 차이는 Parser는 모델이 잘 따라 주기를 기대하고, with_structured_output은 모델의 기능으로 형식을 보장받는다는 점입니다.
+
+### 15. Document — RAG의 기본 데이터 단위
+
+Document는 LangChain에서 "텍스트 한 조각과 그 조각에 대한 정보"를 담는 기본 데이터 단위입니다. page_content에는 모델이 읽을 실제 본문 문자열이, metadata에는 출처 파일, 페이지 번호, 날짜 같은 부가 정보가 키를 자유롭게 정한 딕셔너리로 들어가며, 선택적으로 문서 고유 식별자 id를 둘 수 있습니다. 책에 비유하면 page_content는 한 페이지의 내용, metadata는 페이지 번호와 책 제목이 적힌 라벨, id는 도서관 청구기호입니다. 모델이 읽는 것은 page_content이고, metadata는 주로 프로그램이 활용하는 정보입니다.
+
+```python
+from langchain_core.documents import Document
+
+doc = Document(
+    page_content="LCEL은 Runnable을 | 로 연결하는 문법이다.",
+    metadata={"source": "TIL/260930.md", "page": 1, "date": "2026-09-30"},
+)
+```
+
+RAG 파이프라인의 모든 단계가 이 형태로 데이터를 주고받습니다. 문서 로더(Document Loader, PyPDFLoader·TextLoader 등)는 파일 경로나 URL을 받아 Document 목록을 만들고, 텍스트 분할기(Text Splitter)는 그 목록을 더 작은 조각(chunk)의 Document 목록으로 나누며, 벡터 저장소(Vector Store)는 본문을 임베딩해 저장하면서 metadata를 함께 보관하고, 검색기(Retriever)는 질문 문자열을 받아 관련된 Document 목록을 돌려줍니다. 모든 부품이 같은 형태를 주고받으므로 로더나 벡터 DB를 바꿔도 나머지 코드는 그대로 쓸 수 있습니다. Runnable의 공통 인터페이스 아이디어가 데이터 쪽에도 적용된 것입니다.
+
+metadata가 중요한 이유는 세 가지입니다. 첫째, 답변과 함께 "이 내용은 어느 파일에서 가져왔다"는 출처를 보여 줄 수 있습니다. 둘째, 벡터 DB가 지원하면 "2026년 9월 문서 중에서만" 같은 조건으로 검색을 필터링할 수 있습니다. 셋째, 텍스트 분할기가 문서를 자를 때 원본의 metadata가 모든 조각에 복사되므로, 잘게 나뉜 조각도 어디서 왔는지 알 수 있습니다.
+
+검색기는 Document 목록을 반환하지만 프롬프트의 {context}에는 문자열이 필요하므로, 중간에 format_docs 같은 변환 함수를 둡니다. 출처까지 모델에게 보여 주고 싶다면 metadata를 함께 넣어 문자열을 만들면 됩니다.
+
+```python
+def format_docs(docs):
+    return "\n\n".join(f"[출처: {d.metadata['source']}]\n{d.page_content}" for d in docs)
 ```
