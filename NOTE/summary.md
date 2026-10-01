@@ -587,7 +587,7 @@
 
 ### LangChain 기초 · [상세 →](4-LLM.md#langchain-기초-promptmodelparserrunnable)
 
-> 출처 TIL: 260929, 260930
+> 출처 TIL: 260929, 260930, 261001
 
 - **LangChain**: LLM 앱에서 반복되는 작업(프롬프트 조립 → 모델 호출 → 응답 파싱)을 같은 인터페이스의 부품으로 표준화한 프레임워크. 부품을 레고처럼 이어 붙임
 - **LCEL**: | 연산자로 부품을 연결하는 문법. 앞 부품의 출력이 다음 부품의 입력 (유닉스 파이프와 같은 개념)
@@ -619,6 +619,29 @@
 - **with_structured_output vs PydanticOutputParser**: 서식지를 건네기(API 기능으로 형식 보장, 지원 모델만) vs 말로 부탁하고 사후 파싱(아무 모델, 형식 이탈 시 실패). 기본은 전자, 후자는 미지원 모델용 대안
 - **Document**: page_content(모델이 읽는 본문) + metadata(출처·페이지 등, 프로그램이 활용) + id(선택). 로더 → 분할기 → 벡터 저장소 → 검색기가 모두 Document 목록을 주고받음
 - **metadata 활용**: 출처 표시, 검색 필터링, 분할 시 모든 조각에 자동 상속. 검색 결과는 format_docs로 문자열로 바꿔 {context}에 넣음
+- **메시지 객체**: SystemMessage(지시)·HumanMessage(사용자)·AIMessage(모델 답, invoke 반환값, .content·response_metadata·tool_calls)·ToolMessage(도구 결과). 모델은 기억이 없어 이전 대화를 메시지 목록으로 직접 넣어 줘야 함
+- **InMemoryChatMessageHistory**: 메시지를 파이썬 리스트에 쌓는 가장 단순한 기록 저장소. .messages·add_user_message·add_ai_message·clear, 종료 시 사라짐(Redis·SQL 구현으로 교체 가능). LLM의 "기억"은 앱이 관리하는 메시지 목록
+- **RunnableWithMessageHistory**: 체인을 감싸 기록 꺼내기·저장하기를 자동화. MessagesPlaceholder 자리 + session_id로 기록을 주는 함수 + input/history_messages_key(프롬프트 변수와 일치해야 함). session_id는 config의 configurable로 전달. 레거시 방식, 새 프로젝트는 LangGraph 체크포인터
+- **BaseCallbackHandler**: 실행 중 이벤트(on_chat_model_start·on_llm_new_token·on_llm_end·on_llm_error·on_chain_*·on_tool_*)에 끼어드는 부모 클래스. 로깅·스트리밍 출력·토큰 비용 추적·모니터링에 사용
+- **콜백 붙이는 위치**: config={"callbacks": [...]}는 체인 전체 하위 단계로 전파(권장), 생성자 callbacks=[...]는 그 객체만. 비동기는 AsyncCallbackHandler, 스트리밍만 필요하면 astream_events()도 대안
+
+### LLM 호출 안정성 설계 · [상세 →](4-LLM.md#llm-호출-안정성-설계-retryfallback예외-정책성능-저하)
+
+> 출처 TIL: 261001
+
+- **with_retry()**: 같은 Runnable을 다시 실행(일시적 실패용). stop_after_attempt·retry_if_exception_type·wait_exponential_jitter. 기본값은 모든 에러 재시도라 범위를 좁혀야 함, 붙인 위치가 재시도 범위
+- **with_fallbacks()**: 실패 시 목록의 대체 Runnable로 차례로 넘어감(지속적·출력 실패용). 감싼 범위의 에러만 처리 → 파서 에러까지 잡으려면 체인 단위로. exceptions_to_handle로 범위 제한, exception_key로 에러를 넘겨 자기 수정
+- **Retry + Fallback 조합**: primary.with_retry(...).with_fallbacks([backup]). 모델 클라이언트 내장 재시도(max_retries)를 줄여야 예비 모델로 빨리 넘어감
+- **예외 분류 기준**: 다시 하면 달라지나 → Retry, 다른 방법이면 되나 → Fallback, 둘 다 아니면 즉시 실패(fail fast) + 알림
+- **유형별 정책**: 일시적(429·5xx·타임아웃·연결) = 백오프 Retry · 영구적(401·403·400) = 즉시 실패, 모델 장애면 Fallback · 입력 초과(컨텍스트 길이) = 입력 줄이기나 큰 모델 · 출력 형식(파싱·검증 실패) = 1~2회 Retry 후 피드백·느슨한 파서 · 코드 버그 = 무조건 즉시 실패
+- **계층 설계 원칙**: 안쪽 Retry → Fallback → 체인 Fallback → 바깥 try/except. 처리 범위를 명시해 버그는 그대로 드러나게. 타임아웃은 직접 설정, 부작용 있는 도구는 멱등성 보장 시에만 재시도
+- **출력 계약(UserAnswer)**: with_fallbacks는 출력 타입을 맞춰 주지 않으므로 모든 경로가 같은 Pydantic 모델을 반환하도록 약속. 내용 필드(answer) + 메타데이터(source·degraded)
+- **경로별 어댑터**: 각 경로 끝에서 직접 계약 형태로 변환·검증(계약 검문소). Fallback은 어댑터까지 감쌈, LLM용 스키마(AnswerBody)와 앱용 계약 분리, 마지막엔 실패하지 않는 고정 응답 경로
+- **우아한 성능 저하(Graceful Degradation)**: 일부 실패 시 전체를 멈추지 않고 품질을 낮춰 계속 서비스. 핵심/부가 기능 구분, 작은 모델 → 컨텍스트 축소 → 부가 기능 끄기 → 캐시 → 검색 결과만 → 고정 안내의 사다리
+- **성능 저하 원칙**: 사용자에게 알림(degraded 표시), 개발자에게 알림(Fallback 비율 모니터링), 틀린 답이 해로운 영역(의료·법률·금융)은 곧바로 안내 메시지, 내부는 fail fast·경계는 성능 저하, 회복은 자동
+- **백오프(Backoff)**: 재시도 간격을 실패할수록 늘림. 고정·선형·지수 중 지수(1·2·4·8초)가 표준, 상한(cap)으로 최대 대기 제한
+- **지터(Jitter)**: 대기 시간에 무작위성을 섞어 여러 클라이언트의 동시 재시도(thundering herd)를 분산. 더하기·전체(가장 권장)·절반 지터. LangChain wait_exponential_jitter는 tenacity 기반 더하기 지터
+- **재시도 간격 유의점**: Retry-After 헤더가 우선, 총 대기 시간을 사용자 관점에서 계산해 넘치면 일찍 Fallback, 영구적 에러엔 백오프 무의미
 
 ## 웹개발
 

@@ -1,8 +1,8 @@
 # LLM
 
-자연어 처리 기초, 트랜스포머 아키텍처, 사전학습 언어모델(BERT·GPT), 텍스트 생성·디코딩, Hugging Face Transformers, 텍스트 분류 fine-tuning, 프롬프트·PEFT·파인튜닝 적응 방법, MoE 서빙(FreeToken), 하네스 엔지니어링, LangChain 기초.
+자연어 처리 기초, 트랜스포머 아키텍처, 사전학습 언어모델(BERT·GPT), 텍스트 생성·디코딩, Hugging Face Transformers, 텍스트 분류 fine-tuning, 프롬프트·PEFT·파인튜닝 적응 방법, MoE 서빙(FreeToken), 하네스 엔지니어링, LangChain 기초, LLM 호출 안정성 설계.
 
-> 출처 TIL: 260901, 260902, 260904, 260907, 260908, 260909, 260910, 260911, 260921, 260929, 260930
+> 출처 TIL: 260901, 260902, 260904, 260907, 260908, 260909, 260910, 260911, 260921, 260929, 260930, 261001
 
 ## 목차
 
@@ -117,6 +117,15 @@
     - [13. Pydantic 스키마와 구조화된 출력](#13-pydantic-스키마와-구조화된-출력)
     - [14. with_structured_output과 PydanticOutputParser의 차이](#14-with_structured_output과-pydanticoutputparser의-차이)
     - [15. Document — RAG의 기본 데이터 단위](#15-document--rag의-기본-데이터-단위)
+    - [16. 메시지 객체와 InMemoryChatMessageHistory — LLM의 기억은 애플리케이션이 관리한다](#16-메시지-객체와-inmemorychatmessagehistory--llm의-기억은-애플리케이션이-관리한다)
+    - [17. RunnableWithMessageHistory — 기록 꺼내기와 저장하기의 자동화](#17-runnablewithmessagehistory--기록-꺼내기와-저장하기의-자동화)
+    - [18. BaseCallbackHandler — 실행 중간에 끼어드는 이벤트 훅](#18-basecallbackhandler--실행-중간에-끼어드는-이벤트-훅)
+- [LLM 호출 안정성 설계 (Retry·Fallback·예외 정책·성능 저하)](#llm-호출-안정성-설계-retryfallback예외-정책성능-저하)
+    - [1. Retry와 Fallback — 같은 것을 다시, 또는 다른 것으로](#1-retry와-fallback--같은-것을-다시-또는-다른-것으로)
+    - [2. 예외 유형별 대응 정책](#2-예외-유형별-대응-정책)
+    - [3. 출력 계약 — Primary와 Fallback을 같은 UserAnswer로 합치기](#3-출력-계약--primary와-fallback을-같은-useranswer로-합치기)
+    - [4. 우아한 성능 저하(Graceful Degradation)](#4-우아한-성능-저하graceful-degradation)
+    - [5. 백오프(Backoff)와 지터(Jitter) — 재시도 간격 설계](#5-백오프backoff와-지터jitter--재시도-간격-설계)
 
 ---
 
@@ -1198,7 +1207,7 @@ Tool calling 자체는 모델이 구조화된 요청을 출력하는 능력이�
 
 ## LangChain 기초 (Prompt·Model·Parser·Runnable)
 
-> 출처 TIL: 260929, 260930
+> 출처 TIL: 260929, 260930, 261001
 
 ### 1. LangChain이란 무엇인가
 
@@ -1561,3 +1570,271 @@ metadata가 중요한 이유는 세 가지입니다. 첫째, 답변과 함께 "�
 def format_docs(docs):
     return "\n\n".join(f"[출처: {d.metadata['source']}]\n{d.page_content}" for d in docs)
 ```
+
+### 16. 메시지 객체와 InMemoryChatMessageHistory — LLM의 기억은 애플리케이션이 관리한다
+
+채팅 모델은 문자열 하나가 아니라 "누가 말했는지"라는 역할(role)이 붙은 메시지 목록을 입력으로 받습니다. LangChain은 역할마다 클래스를 따로 둡니다. SystemMessage는 모델의 성격이나 규칙을 정하는 지시, HumanMessage는 사용자가 한 말, AIMessage는 모델이 한 대답, ToolMessage는 도구 실행 결과입니다. model.invoke()가 돌려주는 값 자체가 AIMessage이고, 그래서 답변 텍스트를 .content로 꺼냅니다. StrOutputParser가 하는 일이 바로 이 .content 꺼내기입니다. AIMessage에는 텍스트 외에도 response_metadata(토큰 사용량, 모델명)와 tool_calls(도구 호출 요청)가 함께 들어 있습니다.
+
+```python
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+
+messages = [
+    SystemMessage(content="너는 친절한 수학 선생님이야."),
+    HumanMessage(content="2 더하기 2는?"),
+    AIMessage(content="4입니다."),
+    HumanMessage(content="거기에 3을 곱하면?"),
+]
+response = model.invoke(messages)   # AIMessage
+```
+
+여기서 가장 중요한 사실은 모델에게 기억이 없다는 점입니다(stateless). 위 예시에서 모델이 "거기에"가 4라는 것을 아는 이유는 이전 대화를 HumanMessage와 AIMessage로 목록에 직접 넣어 주었기 때문입니다. 그래서 여러 차례 주고받는 대화(멀티턴)를 하려면 지금까지의 메시지를 어딘가에 쌓아 두었다가 매번 통째로 다시 보내야 합니다. 그 저장소를 추상화한 것이 ChatMessageHistory 계열이고, 가장 단순한 구현이 파이썬 리스트에 담아 두는 InMemoryChatMessageHistory입니다.
+
+```python
+from langchain_core.chat_history import InMemoryChatMessageHistory
+
+history = InMemoryChatMessageHistory()
+history.add_user_message("내 이름은 필수야.")     # HumanMessage로 저장
+history.add_ai_message("반가워요, 필수님!")       # AIMessage로 저장
+
+history.add_user_message("내 이름이 뭐였지?")
+response = model.invoke(history.messages)        # 기록 전체 + 새 질문
+history.add_ai_message(response.content)
+```
+
+내부는 메시지 객체의 리스트일 뿐이라서 .messages로 꺼내고 add_message(), add_user_message(), add_ai_message()로 추가하고 clear()로 비웁니다. 이름의 InMemory처럼 프로그램이 종료되면 기록이 사라지므로, 오래 보관해야 하면 Redis나 SQL 같은 저장소 구현으로 바꿔 끼웁니다. 인터페이스가 같아서 교체가 쉽습니다. 사용자마다 대화를 나누려면 session_id를 키로 하는 딕셔너리에 기록 객체를 여러 개 담아 둡니다.
+
+정리하면 메시지 객체는 대화의 "한 줄", 기록 객체는 그 줄들을 쌓는 "공책"이고, 모델을 호출할 때 공책 전체를 넘겨서 맥락을 전달합니다. LLM의 "기억"은 모델 안이 아니라 애플리케이션이 관리하는 메시지 목록에 있다는 것이 핵심 원리입니다. 대화가 길어지면 컨텍스트 윈도우를 넘거나 비용이 커지므로, 오래된 메시지를 자르거나 요약하는 전략이 따로 필요해집니다.
+
+### 17. RunnableWithMessageHistory — 기록 꺼내기와 저장하기의 자동화
+
+> 참고 · MessagesPlaceholder가 들어가는 채팅 프롬프트는 [4. PromptTemplate과 ChatPromptTemplate](#4-prompttemplate과-chatprompttemplate)
+
+앞 절처럼 직접 멀티턴 대화를 짜면 매번 세 단계를 반복합니다. 기록에서 이전 메시지를 꺼내고, 이전 메시지와 새 질문을 모델에 넘기고, 새 질문과 답변을 기록에 다시 저장합니다. RunnableWithMessageHistory는 기존 체인을 감싸서 첫 단계(꺼내기)와 마지막 단계(저장하기)를 자동으로 처리해 주는 Runnable입니다. 사용하는 쪽은 체인을 호출하는 것만 신경 쓰면 됩니다.
+
+구성 요소는 세 가지입니다. 첫째, 프롬프트 안에 기록이 들어갈 자리를 MessagesPlaceholder로 만듭니다. {question} 자리에는 문자열 하나가 들어가지만 이 자리에는 메시지 목록이 통째로 들어갑니다. 둘째, session_id를 받아 그 세션의 기록 객체를 돌려주는 함수를 만듭니다. 처음 온 세션이면 새 기록 객체를 만들어 줍니다. 셋째, 이 둘을 가지고 체인을 감쌉니다.
+
+```python
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "너는 친절한 비서야."),
+    MessagesPlaceholder(variable_name="history"),   # 이전 대화가 삽입될 자리
+    ("human", "{question}"),
+])
+chain = prompt | model | StrOutputParser()
+
+store = {}
+def get_session_history(session_id: str):
+    if session_id not in store:
+        store[session_id] = InMemoryChatMessageHistory()
+    return store[session_id]
+
+chat = RunnableWithMessageHistory(
+    chain,
+    get_session_history,
+    input_messages_key="question",    # 입력 중 '사용자의 새 메시지'인 키
+    history_messages_key="history",   # 기록을 넣을 프롬프트 변수
+)
+
+config = {"configurable": {"session_id": "user_A"}}
+chat.invoke({"question": "내 이름은 필수야."}, config=config)
+chat.invoke({"question": "내 이름이 뭐였지?"}, config=config)   # 이름을 기억함
+```
+
+input_messages_key와 history_messages_key는 프롬프트의 변수 이름과 정확히 같아야 하며, 처음 쓸 때 가장 흔히 틀리는 부분입니다. session_id는 입력 딕셔너리가 아니라 config의 configurable 안에 넣습니다. 입력은 "무엇을 물을지", config는 "어떤 환경에서 실행할지"를 나타낸다고 구분하면 기억하기 쉽습니다. session_id가 다르면 다른 기록 객체를 쓰므로, user_B로 같은 질문을 하면 이름을 모릅니다.
+
+내부 동작은 이렇습니다. session_id로 기록 객체를 얻고, 그 메시지들을 입력의 history 키에 끼워 넣고, 감싼 체인을 실행한 뒤, 새 질문(HumanMessage)과 답변(AIMessage)을 기록에 추가합니다. 결국 손으로 짠 코드와 같은 일을 Runnable로 포장한 것이라서 invoke, stream, batch를 다른 Runnable과 똑같이 쓸 수 있습니다.
+
+참고로 RunnableWithMessageHistory는 LangChain 문서에서 레거시 방식으로 분류되며, 새 프로젝트에는 LangGraph의 체크포인터(checkpointer)와 thread_id로 대화 메모리를 관리하는 방식이 권장됩니다. 그래도 "세션 ID로 기록을 찾아서 주입하고 저장한다"는 원리는 LangGraph에서도 그대로이므로, 이 구조를 이해해 두면 그대로 이어집니다.
+
+### 18. BaseCallbackHandler — 실행 중간에 끼어드는 이벤트 훅
+
+체인을 invoke()하면 내부에서 체인 시작, 프롬프트 처리, 모델 호출, 토큰 생성, 모델 종료, 체인 종료 같은 단계가 차례로 일어나지만, 보통은 최종 결과만 받으므로 그 과정이 보이지 않습니다. 콜백(callback)은 "이 사건이 일어나면 내 함수를 불러 달라"고 미리 등록해 두는 장치이고, BaseCallbackHandler는 사건(이벤트)별 메서드를 모아 둔 부모 클래스입니다. 상속한 뒤 관심 있는 메서드만 재정의(override)하면 되고, 구현하지 않은 메서드는 아무 일도 하지 않습니다. 로깅과 디버깅(실제로 모델에 들어간 프롬프트 확인), 스트리밍 출력(토큰이 생길 때마다 화면에 표시), 비용 추적(호출마다 토큰 사용량 집계), 모니터링(에러 감지, 실행 시간 측정)에 쓰입니다.
+
+이벤트 메서드 이름은 on_대상_시점 규칙을 따릅니다. on_chat_model_start와 on_llm_start는 모델 호출 직전에 입력 메시지와 함께, on_llm_new_token은 스트리밍 중 토큰이 하나 생길 때마다, on_llm_end는 응답이 끝났을 때 결과와 토큰 사용량과 함께, on_llm_error는 모델 호출 중 에러가 났을 때 불립니다. 이 밖에 체인 단위의 on_chain_start와 on_chain_end, 에이전트에서 쓰는 도구 단위의 on_tool_start와 on_tool_end가 있습니다.
+
+```python
+from langchain_core.callbacks import BaseCallbackHandler
+
+class MyHandler(BaseCallbackHandler):
+    def on_chat_model_start(self, serialized, messages, **kwargs):
+        print("모델 호출 시작:", [m.content for m in messages[0]])
+
+    def on_llm_new_token(self, token: str, **kwargs):
+        print(token, end="", flush=True)
+
+    def on_llm_end(self, response, **kwargs):
+        print("\n응답 완료")
+```
+
+핸들러를 붙이는 방법은 두 가지이고 적용 범위가 다릅니다. 실행할 때 config={"callbacks": [MyHandler()]}로 넘기면 체인 안의 모든 하위 단계(프롬프트, 모델, 파서)에 전파되어 체인 시작부터 토큰 생성까지 전부 받을 수 있습니다. 요청별 로깅, 스트리밍, 추적에는 이 방식이 권장됩니다. 반면 모델을 만들 때 생성자에 callbacks=[...]로 넘기면 그 객체에서 일어나는 이벤트만 받고 하위로 전파되지 않으므로, 특정 부품을 항상 감시하고 싶을 때 씁니다. session_id처럼 실행 환경 정보를 config로 넘긴다는 점이 앞 절과 같습니다.
+
+몇 가지 덧붙일 점이 있습니다. on_llm_new_token은 스트리밍으로 호출할 때만 토큰마다 발생합니다. 비동기 체인(ainvoke, astream)에서는 AsyncCallbackHandler를 상속해 async def로 구현하며, 기본 제공 핸들러로 콘솔에 출력하는 StdOutCallbackHandler 등이 있습니다. LangSmith 같은 추적 도구도 이 콜백 시스템 위에서 동작하며, 이벤트마다 전달되는 run_id와 parent_run_id로 실행 트리를 구성합니다. 스트리밍 이벤트만 필요하면 콜백을 직접 만드는 대신 chain.astream_events()로 이벤트를 받아 처리하는 방법도 있고, 최근에는 이쪽을 더 많이 씁니다.
+
+## LLM 호출 안정성 설계 (Retry·Fallback·예외 정책·성능 저하)
+
+> 출처 TIL: 261001
+
+### 1. Retry와 Fallback — 같은 것을 다시, 또는 다른 것으로
+
+> 참고 · with_retry·with_fallbacks가 모든 부품에 붙는 이유는 [7. Runnable — 공통 인터페이스](#7-runnable--공통-인터페이스)
+
+LLM 호출은 외부 서비스나 무거운 로컬 프로세스에 의존하므로 일반 함수보다 훨씬 자주 실패합니다. 실패는 세 종류로 나눠 볼 수 있습니다. 네트워크 끊김, 타임아웃, 요청 한도 초과, 서버 과부하 같은 일시적 실패, 모델 서버 다운이나 모델 미설치나 API 키 만료 같은 지속적 실패, 그리고 모델이 형식에 맞지 않는 응답을 내서 파서가 에러를 내는 출력 실패입니다. LangChain의 모든 Runnable에는 이에 대응하는 메서드가 두 개 있습니다. with_retry()는 같은 것을 다시 시도하고(전화가 안 되면 다시 걸기), with_fallbacks()는 다른 것으로 대체합니다(계속 안 되면 다른 사람에게 걸기). Retry는 일시적 실패에, Fallback은 지속적 실패와 출력 실패에 맞습니다.
+
+```python
+llm_with_retry = llm.with_retry(
+    retry_if_exception_type=(TimeoutError, ConnectionError),  # 이 에러일 때만
+    stop_after_attempt=3,                                     # 첫 시도 포함 최대 3번
+    wait_exponential_jitter=True,                             # 간격을 점점 늘림(기본값)
+)
+```
+
+with_retry의 기본값은 모든 에러(Exception)에서 재시도하는 것인데, 입력이 잘못된 경우처럼 다시 해도 결과가 같은 에러는 재시도해 봤자 시간만 버리므로 retry_if_exception_type으로 일시적 에러만 지정하는 것이 좋습니다. 또 어디에 붙이느냐가 재시도 범위를 정합니다. llm.with_retry()는 모델 호출만 다시 하고 chain.with_retry()는 체인 전체를 처음부터 다시 실행하므로, 실패할 수 있는 단계에만 좁게 붙이는 편이 효율적입니다.
+
+```python
+primary = ChatOllama(model="qwen3:14b")
+backup  = ChatOllama(model="qwen3:4b")       # 더 가볍고 안정적인 예비 모델
+llm_with_fallback = primary.with_fallbacks([backup])
+```
+
+with_fallbacks는 primary가 실패하면 목록의 다음 Runnable을 차례로 시도하고, 모두 실패하면 마지막 에러를 그대로 냅니다. 목록을 넘기므로 여러 단계의 예비책을 지정할 수 있고, exceptions_to_handle로 특정 에러에서만 대체하도록 제한할 수 있습니다. 큰 모델에서 작은 모델로, 클라우드 API에서 로컬 Ollama로 넘어가는 모델 대체가 대표적인 쓰임입니다. 출력 파싱 실패까지 대비하려면 체인 단위로 대체해야 합니다. llm.with_fallbacks(...)처럼 모델에만 붙이면 그 뒤에 있는 파서의 에러는 잡히지 않습니다. Fallback도 Retry처럼 자신이 감싼 범위 안의 에러만 처리하기 때문입니다.
+
+실전에서는 "몇 번 다시 해 보고, 그래도 안 되면 다른 것으로"처럼 둘을 조합합니다. 이때 주의할 점이 있습니다. 많은 모델 클래스(예: ChatOpenAI의 max_retries)는 클라이언트 안에 자체 재시도 기능이 있어서, 그것을 켠 채 Fallback을 붙이면 주 모델이 내부에서 한참 재시도하느라 예비 모델로 늦게 넘어갑니다. Fallback을 쓸 때는 주 모델의 내장 재시도를 줄이거나 끄는 것(max_retries=0 등)이 일반적입니다.
+
+```python
+robust_llm = (
+    primary.with_retry(stop_after_attempt=2)   # 주 모델로 2번까지
+           .with_fallbacks([backup])           # 그래도 실패하면 예비 모델
+)
+```
+
+두 메서드 모두 Runnable을 받아 Runnable을 돌려주므로 `|`로 잇거나 다른 체인 안에 넣는 등 LCEL 조합을 그대로 쓸 수 있습니다. 또 with_fallbacks(..., exception_key="error")를 지정하면 앞 단계의 에러 객체가 입력에 담겨 예비 Runnable로 전달되므로, "이런 에러가 났으니 고쳐서 다시 답하라"는 자기 수정(self-correction) 패턴을 만들 수 있습니다. Retry나 Fallback이 실제로 일어났는지는 콜백의 on_llm_error로 로깅해 확인합니다.
+
+### 2. 예외 유형별 대응 정책
+
+> 참고 · 상태 코드 분류 자체는 [웹개발 · 10. 4xx 클라이언트 오류](5-웹개발.md#10-4xx-클라이언트-오류)와 [웹개발 · 11. 5xx 서버 오류](5-웹개발.md#11-5xx-서버-오류)
+
+with_retry의 기본값처럼 모든 에러에 같은 대응을 하면 위험합니다. API 키가 틀렸는데 세 번 재시도하면 시간만 낭비하고, 코드 오타(KeyError)를 재시도로 감싸면 버그가 가려지고, 요청 한도 초과인데 즉시 재시도하면 한도에 더 빨리 걸립니다. 그래서 실전에서는 에러를 먼저 분류하고 분류별 정책을 정해 둡니다. 분류 기준은 두 가지 질문입니다. 똑같이 다시 하면 결과가 달라질 수 있는가(그렇다면 Retry), 다른 방법(모델, 입력, 파서)으로 하면 되는가(그렇다면 Fallback). 둘 다 아니면 즉시 실패(fail fast)시키고 알림을 보냅니다.
+
+첫째, 일시적 에러(transient error)는 시간이 지나면 풀립니다. 요청 한도 초과(429), 서버 과부하나 일시 장애(500·502·503·529), 타임아웃, 네트워크 끊김이 여기에 속합니다. 정책은 지수 백오프를 적용한 Retry이고, 429 응답에 Retry-After 헤더가 있으면 그 값을 따르는 것이 가장 정확합니다. 재시도를 다 써도 실패하면 Fallback으로 넘어갑니다.
+
+둘째, 영구적 에러(permanent error)는 다시 해도 똑같습니다. 인증 실패(401·403)는 사람이 키를 고쳐야 하므로 즉시 실패와 알림, 잘못된 요청 형식(400)은 코드를 고쳐야 하므로 즉시 실패입니다. 모델 없음(404, Ollama의 model not found)은 설정 오류라면 즉시 실패, 운영 중 모델이 내려간 것이라면 Fallback입니다. 이 유형은 절대 Retry하지 않습니다. 결과가 바뀌지 않으니 재시도는 지연과 비용만 늘립니다.
+
+셋째, 입력 문제는 요청 내용 자체가 한도를 넘은 경우로, 컨텍스트 길이 초과(400과 함께 오는 context length exceeded 계열 메시지)가 대표적입니다. 같은 입력으로 재시도하면 반드시 다시 실패하므로, 대화 기록에서 오래된 메시지를 자르거나 요약해서 다시 보내거나, 컨텍스트 윈도우가 더 큰 모델로 Fallback합니다. 대화 기록을 관리하는 전략이 바로 이 에러를 예방하는 장치입니다.
+
+넷째, 출력 문제는 모델이 기대와 다른 형식으로 답한 경우로 JSON 파싱 실패(OutputParserException)와 스키마 불일치(Pydantic ValidationError)가 있습니다. 이 유형은 특이하게도 다시 하면 성공할 수 있습니다. LLM은 같은 입력에도 매번 조금씩 다르게 답하기 때문입니다(temperature가 0보다 클 때). 그래서 1~2번 재시도할 가치가 있고, 그다음으로는 에러 내용을 모델에게 피드백하며 다시 시키거나, JSON을 포기하고 텍스트로라도 받는 느슨한 파서로 Fallback하거나, with_structured_output처럼 모델 기능으로 형식을 강제해 이 에러 자체를 줄입니다.
+
+다섯째, 프로그래밍 버그(프롬프트 변수 누락으로 인한 KeyError, TypeError, AttributeError)는 무조건 즉시 실패입니다. 재시도나 Fallback으로 감싸면 버그가 조용히 숨겨집니다. with_retry의 기본값(Exception 전체)이 위험한 가장 큰 이유입니다.
+
+| 유형 | Retry | Fallback | 즉시 실패 | 핵심 대응 |
+|---|---|---|---|---|
+| 일시적 | ✅ | 재시도 소진 후 | | 백오프 후 재시도 |
+| 영구적 | ❌ | 모델 장애면 ✅ | ✅ | 설정 수정, 알림 |
+| 입력 초과 | ❌ | 큰 모델로 ✅ | | 입력 줄이기 |
+| 출력 형식 | 1~2회 | 느슨한 파서로 ✅ | | 에러 피드백, 구조화 출력 |
+| 코드 버그 | ❌ | ❌ | ✅ | 코드 수정 |
+
+코드로 옮길 때는 계층으로 쌓습니다. 가장 안쪽의 Retry가 일시적 에러를 조용히 흡수하고, 그 바깥의 Fallback이 같은 방법이 안 될 때 대안으로 넘기고, 체인 단위 Fallback이 출력 형식 문제를 처리하며, 가장 바깥의 try/except가 사용자에게는 친절한 메시지를, 개발자에게는 로그를 남깁니다. 이 설계의 핵심은 retry_if_exception_type과 exceptions_to_handle로 처리 범위를 명시하는 것입니다. 지정하지 않은 에러(버그 등)는 모든 계층을 통과해 그대로 드러나야 합니다.
+
+```python
+import httpx
+from langchain_core.exceptions import OutputParserException
+
+TRANSIENT = (httpx.ConnectError, httpx.ReadTimeout, TimeoutError)
+
+robust_llm = (
+    primary.with_retry(retry_if_exception_type=TRANSIENT, stop_after_attempt=3)
+           .with_fallbacks([backup], exceptions_to_handle=TRANSIENT)
+)
+strict = prompt | robust_llm | JsonOutputParser()
+loose  = prompt | robust_llm | StrOutputParser()
+chain = strict.with_fallbacks([loose], exceptions_to_handle=(OutputParserException,))
+```
+
+함께 기억할 원칙이 두 가지 있습니다. 하나는 타임아웃을 직접 설정해야 한다는 점입니다. 타임아웃이 없으면 응답 없는 서버를 무한정 기다리느라 에러 자체가 나지 않아서 Retry도 Fallback도 작동할 기회가 없습니다. 다른 하나는 부작용(side effect)이 있는 작업의 재시도를 조심해야 한다는 점입니다. 메일 전송이나 결제 같은 도구 호출을 재시도하면 두 번 실행될 수 있으므로, 여러 번 실행해도 결과가 같은 성질인 멱등성(idempotency)이 보장될 때만 재시도합니다. 정확한 예외 클래스 이름은 SDK마다 다르므로(OpenAI·Anthropic SDK의 RateLimitError, Ollama의 httpx 예외와 ollama.ResponseError 등), 클래스 이름보다 HTTP 상태 코드로 분류하는 기준을 기억해 두는 편이 제공자가 바뀌어도 유용합니다.
+
+> 참고 · 멱등성의 정의는 [웹개발 · 7. HTTP 메서드와 안전성·멱등성](5-웹개발.md#7-http-메서드와-안전성멱등성)
+
+### 3. 출력 계약 — Primary와 Fallback을 같은 UserAnswer로 합치기
+
+with_fallbacks는 실패하면 실행할 Runnable만 바꿔 줄 뿐 출력 타입을 맞춰 주지는 않습니다. 예를 들어 JsonOutputParser를 쓰는 체인에 StrOutputParser를 쓰는 체인을 Fallback으로 붙이면, 성공한 경로에 따라 dict가 나오기도 하고 str이 나오기도 합니다. 그러면 체인을 쓰는 쪽 코드가 isinstance로 경로마다 분기해야 하고, Fallback이 하나 늘 때마다 분기도 늘어납니다. 체인 내부 사정(어느 경로로 성공했는지)이 바깥으로 새어 나온 상태입니다. 해결책은 "어떤 경로로 가든 최종 출력은 반드시 같은 형태"라는 약속, 즉 출력 계약(output contract)을 정하는 것입니다.
+
+계약은 Pydantic 모델로 정의합니다. 필드는 두 종류입니다. 사용자가 실제로 보는 내용 필드(answer)와, 어떤 경로로 만들어졌는지 기록하는 메타데이터 필드(source, degraded)입니다. 메타데이터 필드는 형태를 통일하면서도 출처 정보는 잃지 않기 위한 장치입니다.
+
+```python
+from typing import Literal
+from pydantic import BaseModel
+from langchain_core.runnables import RunnableLambda
+
+class UserAnswer(BaseModel):
+    answer: str
+    source: Literal["primary", "fallback", "static"]
+    degraded: bool = False
+
+class AnswerBody(BaseModel):          # LLM이 채울 스키마 (메타데이터 제외)
+    answer: str
+
+primary_branch = (
+    prompt
+    | primary_llm.with_structured_output(AnswerBody)
+    | RunnableLambda(lambda b: UserAnswer(answer=b.answer, source="primary"))
+)
+fallback_branch = (
+    prompt | backup_llm | StrOutputParser()
+    | RunnableLambda(lambda s: UserAnswer(answer=s, source="fallback", degraded=True))
+)
+static_branch = RunnableLambda(lambda _: UserAnswer(
+    answer="지금은 답변을 드릴 수 없어요. 잠시 후 다시 시도해 주세요.",
+    source="static", degraded=True,
+))
+
+chain = primary_branch.with_fallbacks([fallback_branch, static_branch])
+```
+
+구조의 핵심은 각 경로(branch)의 마지막 단계에 어댑터(adapter)를 두어 경로 안에서 직접 UserAnswer로 바꾸는 것입니다. 내부 방식은 구조화 출력, 텍스트, 고정 메시지로 제각각이지만 출구는 하나로 모입니다. 이제 쓰는 쪽은 result.answer를 보여 주고, 필요하면 result.degraded로 "간이 답변" 표시만 붙이면 됩니다.
+
+설계 포인트는 여섯 가지입니다. 첫째, 계약은 입구와 출구 양쪽에 있습니다. Fallback이 실행될 때는 Primary가 받았던 입력이 그대로 전달되므로 모든 경로가 같은 입력을 받아야 하고, 모두 같은 출력을 내야 합니다. 그래서 바깥에서 보면 세 경로는 서로 바꿔 끼울 수 있는 부품이 됩니다. 둘째, 변환은 소비자가 아니라 각 경로 안에서 합니다. 출력이 다른 것은 그 경로의 사정이므로 정리 책임도 경로에 두며, 새 Fallback을 추가해도 그 끝에 어댑터만 붙이면 소비자 코드는 바뀌지 않습니다. 셋째, Fallback은 어댑터까지 포함해서 감쌉니다. prompt부터 어댑터까지를 하나의 경로로 묶어야 파싱 실패나 계약 위반(ValidationError)도 에러로 취급되어 다음 경로로 넘어갑니다. Pydantic은 객체를 만드는 순간 검증하므로 어댑터가 "계약 검문소" 역할을 합니다. 넷째, LLM용 스키마와 앱용 계약을 분리합니다. source나 degraded는 시스템이 아는 사실이지 모델이 판단할 내용이 아니므로, 모델은 AnswerBody로 내용만 만들고 메타데이터는 어댑터가 확정합니다. 다섯째, 마지막 경로는 실패하지 않게 만듭니다. static_branch는 LLM을 부르지 않으므로 이 체인은 어떤 상황에서도 UserAnswer를 반환하고, 바깥 try/except가 하던 친절한 메시지 역할이 체인 안의 정식 경로로 들어옵니다. 다만 exceptions_to_handle로 범위를 좁혀 코드 버그까지 고정 메시지로 덮지 않게 해야 합니다. 여섯째, 메타데이터로 관찰 가능성(observability)을 유지합니다. source 필드가 있으면 로그에서 Fallback 비율을 집계할 수 있고, "오늘 요청의 30%가 fallback으로 처리됨" 같은 사실은 Primary 모델에 문제가 있다는 신호가 됩니다.
+
+한 문장으로 요약하면 "내부 구현은 경로마다 달라도 되지만, 출구는 하나의 계약으로 모은다"입니다. 객체지향에서 인터페이스를 정의하고 여러 구현체를 바꿔 끼우는 것과 같은 원리입니다. 참고로 with_fallbacks로 만든 체인의 output_schema는 Primary 기준으로 계산되므로 LangChain이 Fallback의 출력 타입을 자동으로 검사해 주지는 않습니다. 계약을 지키는 책임은 각 경로의 어댑터에 있고, Pydantic 검증이 그 책임을 실행 시점에 강제합니다.
+
+### 4. 우아한 성능 저하(Graceful Degradation)
+
+우아한 성능 저하는 시스템의 일부 구성 요소가 실패했을 때 전체를 멈추는 대신, 기능이나 품질을 조금 낮춰서라도 계속 서비스하는 설계 원칙입니다. 엘리베이터가 고장 나도 건물은 폐쇄되지 않고 계단으로 다닐 수 있고, 쌍발 비행기는 엔진 하나가 꺼져도 착륙할 수 있게 설계되며, 쇼핑몰의 개인화 추천 서비스가 죽으면 페이지 전체가 에러를 내는 대신 인기 상품 목록을 보여 줍니다. 반대 개념은 부품 하나의 문제가 전체 서비스 중단으로 번지는 전면 실패(total failure)입니다.
+
+설계는 기능을 핵심과 부가로 나누는 데서 시작합니다. 핵심 기능은 그것이 안 되면 서비스의 존재 이유가 없으므로 어떻게든 지켜야 하고, 부가 기능은 끄거나 단순화해도 됩니다. RAG 질의응답 서비스라면 질문에 답하는 것이 핵심이고, 출처 표시, 후속 질문 추천, 대화 기록 반영, 스트리밍 출력, 서식 꾸미기는 부가입니다. 출처 추출이 실패했다고 답변 전체를 버릴 이유는 없습니다.
+
+LLM 애플리케이션에서는 성능 저하를 사다리처럼 단계로 설계할 수 있습니다. 정상 상태(큰 모델과 전체 기능)에서 시작해, 작은 모델이나 다른 제공자로 대체하고(답변 품질 일부를 잃음), 오래된 대화 기록이나 검색 문서 수를 줄여 컨텍스트를 축소하고(맥락 반영 정도), 도구 호출이나 구조화 출력이나 출처 표시 같은 부가 기능을 끄고(편의 기능), 같거나 비슷한 질문의 캐시된 답을 돌려주고(최신성), 생성 없이 검색 결과만 보여 주고(요약과 자연스러운 답변), 마지막에는 고정 안내 메시지를 냅니다(답변 자체, 하지만 시스템은 살아 있음). 아래로 갈수록 품질은 낮아지지만 실패 가능성도 낮아지며, 마지막 단계는 외부 의존성이 없어서 실패하지 않습니다. 앞 절의 UserAnswer 구조와 static_branch가 이 사다리를 구현한 것입니다.
+
+설계 원칙은 다섯 가지입니다. 첫째, 사용자에게 알립니다. 품질이 낮아졌다면 "간이 답변" 같은 표시를 붙여야 하며, 낮은 품질의 답을 정상 답인 척 내보내면 신뢰가 깨집니다. UserAnswer.degraded가 이 정보를 UI까지 전달하는 통로입니다. 둘째, 개발자에게도 알립니다. 성능 저하는 사용자에게는 "그럭저럭 동작"이지만 시스템 입장에서는 장애가 진행 중이라는 신호이고, 너무 매끄러우면 아무도 모른 채 몇 주가 지날 수 있습니다. source 필드와 콜백으로 기록하고 Fallback 비율이 높아지면 알림이 오게 합니다. 셋째, 틀린 답보다 "모른다"가 나을 때가 있습니다. 이것이 이 원칙의 한계이자 가장 중요한 주의점입니다. 잡담, 요약, 추천처럼 틀려도 사용자가 쉽게 알아채는 영역에는 성능 저하가 적절하지만, 의료·법률·금융 판단이나 정확한 수치가 필요한 답처럼 틀린 답이 그럴듯해서 믿고 행동하게 되는 영역에서는 작은 모델의 그럴듯한 오답이 고정 안내 메시지보다 해롭습니다. 이런 영역에서는 중간 단계를 건너뛰고 곧바로 정직한 안내 메시지로 가는 것이 올바른 설계입니다.
+
+넷째, 즉시 실패(fail fast)와 충돌하지 않습니다. 둘은 적용 위치가 다릅니다. 내부(개발자 쪽)에서는 즉시 실패로 버그를 숨기지 않고 로그와 알림으로 드러내고, 경계(사용자 쪽)에서는 우아한 성능 저하로 무너진 화면 대신 안내를 보여 줍니다. 문제는 개발자에게 크게 알리고 사용자에게는 부드럽게 보여 주는 것이 두 원칙을 함께 쓰는 방법입니다. 다섯째, 회복은 자동이어야 합니다. Primary가 다시 살아나면 별도 조치 없이 정상 경로로 돌아와야 하며, with_fallbacks는 요청마다 Primary부터 시도하므로 이 성질을 기본으로 갖습니다.
+
+정리하면 Retry와 Fallback은 도구, 예외 정책은 언제 어떤 도구를 쓸지에 대한 규칙, 출력 계약은 경로가 바뀌어도 형태를 지키는 장치이고, 우아한 성능 저하는 이 모든 것이 향하는 설계 목표입니다.
+
+### 5. 백오프(Backoff)와 지터(Jitter) — 재시도 간격 설계
+
+Retry에서 "몇 번 할지"만큼 중요한 것이 "언제 할지"입니다. 서버가 과부하로 쓰러졌는데 클라이언트가 실패할 때마다 즉시 다시 요청하면, 재시도가 부하를 더 늘려 회복을 방해합니다. 요청 한도 초과라면 한도가 풀리기도 전에 남은 시도 횟수를 다 써 버립니다. 그래서 재시도 사이에 기다리는 시간이 필요하고, 이 대기 전략을 백오프(물러서기)라고 합니다.
+
+대기 전략에는 매번 같은 시간을 기다리는 고정(fixed), 1·2·3초처럼 조금씩 늘리는 선형(linear), 1·2·4·8초처럼 매번 두 배로 늘리는 지수(exponential) 방식이 있고, 지수 백오프가 표준입니다. 첫 실패는 순간적인 문제일 가능성이 크니 금방 다시 해 보지만, 계속 실패한다는 것은 장애가 생각보다 심각하다는 증거이므로 점점 더 크게 물러나 서버에 회복할 시간을 줍니다. 실패가 반복될수록 상황 판단을 보수적으로 바꾸는 원리입니다. 다만 지수는 금방 커져서 10번째 시도면 512초를 기다리게 되므로, 최대 대기 시간인 상한(cap)을 둡니다. 초기값 1초에 상한 10초라면 1, 2, 4, 8, 10, 10초 순으로 기다립니다.
+
+클라이언트가 하나라면 백오프만으로 충분하지만, 실제 서비스에는 클라이언트가 수천 개 있습니다. 서버가 잠깐 멈추면 모든 클라이언트가 같은 순간에 실패하고, 모두 같은 백오프 규칙을 쓰므로 1초 뒤, 3초 뒤, 7초 뒤에 정확히 동시에 재시도합니다. 대기 시간은 늘었지만 재시도가 같은 시점에 몰려서, 서버가 회복하자마자 요청이 한꺼번에 들이닥쳐 다시 쓰러집니다. 이것을 몰려드는 무리 문제(thundering herd problem)라고 합니다. 지터(흔들림)는 대기 시간에 무작위 값을 섞어 재시도 시점을 시간축 위에 흩뿌리는 기법이며, 같은 수의 요청이라도 퍼져서 도착하므로 서버가 감당할 수 있게 됩니다.
+
+지터를 섞는 방식은 세 가지가 대표적입니다. 지수 백오프로 4초를 기다릴 차례라고 하면, 더하기 지터(additive)는 4초에 0~1초 사이 무작위 값을 더해 4~5초를 기다리고(단순하지만 분산 효과는 약한 편), 전체 지터(full jitter)는 0~4초 사이에서 무작위로 골라(분산 효과가 가장 크고 널리 권장됨), 절반 지터(equal jitter)는 절반인 2초를 보장하고 나머지 절반 범위에서 무작위로 골라 2~4초를 기다립니다(최소 대기를 보장하면서 분산).
+
+LangChain의 with_retry에서 wait_exponential_jitter=True(기본값)가 지수 백오프와 지터를 합친 옵션입니다. 내부적으로 tenacity라는 재시도 라이브러리를 쓰며, 방식은 더하기 지터에 해당합니다.
+
+```python
+llm.with_retry(
+    stop_after_attempt=4,
+    wait_exponential_jitter=True,
+    exponential_jitter_params={
+        "initial": 1,    # 첫 대기 시간(초)
+        "max": 10,       # 상한(초)
+        "exp_base": 2,   # 몇 배씩 늘릴지
+        "jitter": 1,     # 더할 무작위 값의 최대치(초)
+    },
+)
+```
+
+유의할 점이 세 가지 있습니다. 첫째, 서버가 기다릴 시간을 알려 주면 그것이 우선입니다. 429 응답의 Retry-After 헤더 값이 직접 계산한 백오프보다 정확하며, 많은 공식 SDK가 이를 자동으로 처리합니다. 둘째, 총 대기 시간을 사용자 관점에서 계산해 봅니다. 네 번 시도에 1·2·4초를 기다리면 대기만 7초 이상이고 각 요청의 타임아웃까지 더해지므로, 사용자가 기다려 줄 수 있는 시간을 넘으면 시도 횟수를 줄이고 일찍 Fallback으로 넘어가는 것이 낫습니다. 셋째, 백오프는 일시적 에러에만 의미가 있습니다. 영구적 에러는 아무리 오래 기다려도 결과가 같습니다. 정리하면 백오프는 "얼마나" 기다릴지를 정하는 클라이언트 하나의 관점이고, 지터는 "다 같이 기다리지 않도록" 하는 시스템 전체의 관점입니다.
