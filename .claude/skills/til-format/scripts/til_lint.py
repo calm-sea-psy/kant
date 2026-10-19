@@ -64,12 +64,16 @@ def lint(path):
         out.append((1, '파일 첫 줄이 빈 줄 (첫 줄은 `1. ...` 이어야 함)'))
 
     in_fence = False
+    fence_is_mermaid = False
     for i, l in enumerate(lines, 1):
         stripped = l.strip()
 
-        # fenced code blocks
+        # fenced code blocks (```mermaid 는 GitHub 렌더링용이라 예외)
         if stripped.startswith('```'):
-            out.append((i, '펜스 코드 블록 ``` (코드는 4칸 들여쓰기로)'))
+            if not in_fence:
+                fence_is_mermaid = stripped == '```mermaid'
+            if not fence_is_mermaid:
+                out.append((i, '펜스 코드 블록 ``` (코드는 4칸 들여쓰기로)'))
             in_fence = not in_fence
             continue
         if in_fence:
