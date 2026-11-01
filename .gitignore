@@ -3,4 +3,5 @@ LLMBenchMark/
 practice/
 __pycache__/
 mcp-game/
+LessonPlan/
 .claude/launch.json
